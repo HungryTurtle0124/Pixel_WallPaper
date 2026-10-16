@@ -1,0 +1,78 @@
+# Visual Studio user state
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.VC.db
+*.VC.opendb
+
+# .NET build, publish, package and test output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+[Pp]ublish/
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+*.nupkg
+*.snupkg
+
+# Windows binaries, debug symbols and installer output
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+
+# Local SDK/NuGet caches, scratch verification and profiling results
+/.local/
+*.log
+*.etl
+*.dmp
+*.diagsession
+*.vsp
+*.vspx
+*.nettrace
+*.netperf
+*.gcdump
+
+# Local configuration, credentials and publishing profiles
+.env
+.env.*
+!.env.example
+!.env.sample
+*.local.json
+*.local.config
+*.pfx
+*.p12
+*.pem
+*.key
+*.pubxml
+*.pubxml.user
+
+# Temporary/editor files and Windows metadata
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Keep packages.lock.json, the background PNG, and Rendering/Shaders/*.cso.
+# These are shared inputs required to reproduce and build the application.
