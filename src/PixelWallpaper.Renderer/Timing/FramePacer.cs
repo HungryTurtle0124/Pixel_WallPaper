@@ -9,13 +9,26 @@ namespace PixelWallpaper.Renderer.Timing;
 internal sealed class FramePacer : IDisposable
 {
     private readonly SafeWaitHandle _timer;
-    private readonly long _interval = (long)Math.Ceiling(Stopwatch.Frequency / 30.0);
+    private long _interval = (long)Math.Ceiling(Stopwatch.Frequency / 30.0);
     private readonly uint _tolerableDelay;
     private long _nextFrame;
     private long _previousStart;
     private bool _slotReady;
     private bool _timerArmed;
     private uint _runtimeTimingVersion;
+    public int FramesPerSecond { get; private set; } = 30;
+    public long FrameCount { get; private set; }
+
+    public void SetFrameRate(int framesPerSecond)
+    {
+        if (framesPerSecond is not (15 or 30 or 60)) throw new ArgumentOutOfRangeException(nameof(framesPerSecond));
+        if (FramesPerSecond == framesPerSecond) return;
+        FramesPerSecond = framesPerSecond;
+        _interval = (long)Math.Ceiling(Stopwatch.Frequency / (double)framesPerSecond);
+        CancelTimer();
+        _nextFrame = Stopwatch.GetTimestamp() + _interval;
+        _previousStart = 0;
+    }
 
     public FramePacer()
     {
@@ -110,6 +123,7 @@ internal sealed class FramePacer : IDisposable
         _previousStart = now;
         _nextFrame = now + _interval; // No catch-up bursts after a late frame.
         _slotReady = false;
+        FrameCount++;
         return delta;
     }
 

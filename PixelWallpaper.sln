@@ -7,6 +7,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3A76E722-179
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixelWallpaper.Renderer", "src\PixelWallpaper.Renderer\PixelWallpaper.Renderer.csproj", "{4408DB3E-75F9-444F-8DCF-7A2FB756CCCB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PixelWallpaper.App", "src\PixelWallpaper.App\PixelWallpaper.App.csproj", "{F8B43CE5-E238-41EF-9468-9B4E012B60E9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -16,12 +18,17 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F8B43CE5-E238-41EF-9468-9B4E012B60E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8B43CE5-E238-41EF-9468-9B4E012B60E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8B43CE5-E238-41EF-9468-9B4E012B60E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8B43CE5-E238-41EF-9468-9B4E012B60E9}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4408DB3E-75F9-444F-8DCF-7A2FB756CCCB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4408DB3E-75F9-444F-8DCF-7A2FB756CCCB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4408DB3E-75F9-444F-8DCF-7A2FB756CCCB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4408DB3E-75F9-444F-8DCF-7A2FB756CCCB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{F8B43CE5-E238-41EF-9468-9B4E012B60E9} = {3A76E722-1795-41B8-9D44-594CDF00EADB}
 		{4408DB3E-75F9-444F-8DCF-7A2FB756CCCB} = {3A76E722-1795-41B8-9D44-594CDF00EADB}
 	EndGlobalSection
 EndGlobal

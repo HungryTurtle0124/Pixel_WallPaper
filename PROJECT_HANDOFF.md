@@ -4,15 +4,15 @@
 
 This document preserves the original design goals and future roadmap. It is not
 a request to restart implementation or build all planned features. **Milestones
-1–4 are complete; Milestone 5 has not started.** See [README.md](README.md) for the
+1–5 are complete; later milestones have not started.** See [README.md](README.md) for the
 current build/run instructions, measured results, and limitations, and
 [architecture notes](docs/ARCHITECTURE.md) for implementation details.
 
-The current implementation uses one C# executable targeting `net8.0-windows`,
-with Vortice/Direct3D 11, a 480×270 Rainy Forest scene, Win32 desktop hosting,
-and performance-aware suspension. The multiple projects, WPF application,
-additional scenes, and interfaces proposed below are future options rather than
-requirements for the existing prototype. The repository's SDK selection is in
+The current implementation uses a WPF controller and separate C# renderer targeting
+`net8.0-windows`, with Vortice/Direct3D 11, a 480×270 Rainy Forest scene, Win32 desktop
+hosting, performance-aware suspension, and 15/30/60 FPS modes. The broader project
+split, additional scenes, and interfaces proposed below are future options rather
+than requirements for the existing prototype. The repository's SDK selection is in
 `global.json`; its SDK version is independent of the .NET 8 runtime target.
 
 I want to build a lightweight Windows wallpaper engine focused specifically on retro/pixel-art procedural wallpapers.
@@ -192,8 +192,8 @@ Do not blur pixel graphics during scaling.
 
 Keep the code modular.
 
-Possible future structure; the current single executable keeps these concerns
-in folders until splitting projects is justified:
+Possible future structure; the current controller and renderer keep further concerns
+in folders until splitting more projects is justified:
 
 ```text
 PixelWallpaper/
@@ -557,7 +557,12 @@ Do not spend GPU cycles drawing a wallpaper nobody can see.
 
 ---
 
-# Milestone 5 — planned, not started
+# Milestone 5 — complete
+
+Implemented: separate WPF Start/Stop/settings controller, one scene choice,
+Eco/Balanced/Smooth modes, optional fullscreen pausing, local JSON persistence,
+and clean shutdown ownership. Closing the controller stops the wallpaper.
+Tray integration and Start with Windows remain deferred.
 
 Only after the rendering core is stable, add the WPF control application.
 

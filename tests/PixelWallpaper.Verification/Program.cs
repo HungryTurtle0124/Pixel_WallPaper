@@ -21,6 +21,30 @@ internal static class Verification
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--settings")
+        {
+            try { ControllerVerification.CheckSettings(); return 0; }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
+        if (args.Length == 1 && args[0] == "--inspect")
+        {
+            nint endpoint = PixelWallpaper.Shared.RendererProtocol.FindWindow();
+            if (endpoint == 0) { Console.WriteLine("Renderer: stopped"); return 0; }
+            PixelWallpaper.Shared.RendererProtocol.GetWindowThreadProcessId(endpoint, out uint id);
+            nuint options = PixelWallpaper.Shared.RendererProtocol.Send(endpoint, PixelWallpaper.Shared.RendererProtocol.ReadOptions);
+            Console.WriteLine($"Renderer PID: {id}; FPS cap: {options & 0xFF}; pause fullscreen: {(options & 0x100) != 0}; pause reasons: {PixelWallpaper.Shared.RendererProtocol.Send(endpoint, PixelWallpaper.Shared.RendererProtocol.ReadPauseReasons)}");
+            return 0;
+        }
+        if (args.Length == 2 && args[0] is "--controls" or "--owner-exit")
+        {
+            try
+            {
+                if (args[0] == "--controls") ControllerVerification.RunAsync(args[1]).GetAwaiter().GetResult();
+                else ControllerVerification.ExitOwnerAsync(args[1]).GetAwaiter().GetResult();
+                return 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
         if (args.Length == 1 && args[0] == "--fixture") return Fixture.Run();
         if (args.Length == 1 && args[0] == "--hold-fullscreen") return Fixture.Run(true);
         if (args.Length == 1 && args[0] == "--observe") return ObserveSession();
@@ -276,14 +300,16 @@ internal static class Verification
         private static bool _done;
         private static bool _holdFullscreen;
         private static NativeMethods.Rect _bounds;
+        private static nint _brush;
         public static int Run(bool holdFullscreen = false)
         {
             _holdFullscreen = holdFullscreen;
+            _brush = CreateSolidBrush(0x00232216);
             _procedure = Procedure;
             nint instance = NativeMethods.GetModuleHandleW(null);
             var windowClass = new NativeMethods.WindowClass
             { Size = (uint)Marshal.SizeOf<NativeMethods.WindowClass>(), Procedure = _procedure,
-                Instance = instance, ClassName = "PixelWallpaper.VerificationFixture", Background = 5 };
+                Instance = instance, ClassName = "PixelWallpaper.VerificationFixture" };
             NativeMethods.RegisterClassExW(in windowClass);
             nint window = NativeMethods.CreateWindowExW(0, windowClass.ClassName,
                 "Pixel Wallpaper fullscreen test fixture", NativeMethods.WsOverlappedWindow,
@@ -304,12 +330,25 @@ internal static class Verification
             { NativeMethods.TranslateMessage(in message); NativeMethods.DispatchMessageW(in message); }
             NativeMethods.DestroyWindow(window);
             NativeMethods.UnregisterClassW(windowClass.ClassName, instance);
+            DeleteObject(_brush);
             GC.KeepAlive(_procedure);
             return 0;
         }
 
         private static nint Procedure(nint window, uint message, nuint wParam, nint lParam)
         {
+            if (message == NativeMethods.WmPaint)
+            {
+                nint dc = BeginPaint(window, out var paint);
+                DesktopNative.GetClientRect(window, out var area);
+                FillRect(dc, in area, _brush);
+                SetTextColor(dc, 0x00F3F5EF);
+                SetBkMode(dc, 1);
+                area.Left += 30; area.Right -= 30; area.Top = Math.Max(30, area.Bottom / 2 - 30);
+                DrawTextW(dc, "Pixel Wallpaper fullscreen verification\nThis test window closes automatically.", -1, ref area, 0x11);
+                EndPaint(window, in paint);
+                return 0;
+            }
             if (message == NativeMethods.WmClose) { _done = true; return 0; }
             if (message == RuntimeNative.Timer)
             {
@@ -359,5 +398,23 @@ internal static class Verification
         private static extern bool SetForegroundWindow(nint window);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetMessageW(out NativeMethods.Message message, nint window, uint min, uint max);
+        [StructLayout(LayoutKind.Sequential)]
+        private unsafe struct PaintData
+        {
+            public nint Dc;
+            public int Erase;
+            public NativeMethods.Rect Area;
+            public int Restore, Update;
+            public fixed byte Reserved[32];
+        }
+        [DllImport("user32.dll")] private static extern nint BeginPaint(nint window, out PaintData paint);
+        [DllImport("user32.dll")] private static extern bool EndPaint(nint window, in PaintData paint);
+        [DllImport("user32.dll")] private static extern int FillRect(nint dc, in NativeMethods.Rect area, nint brush);
+        [DllImport("gdi32.dll")] private static extern nint CreateSolidBrush(uint color);
+        [DllImport("gdi32.dll")] private static extern bool DeleteObject(nint item);
+        [DllImport("gdi32.dll")] private static extern uint SetTextColor(nint dc, uint color);
+        [DllImport("gdi32.dll")] private static extern int SetBkMode(nint dc, int mode);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int DrawTextW(nint dc, string text, int length, ref NativeMethods.Rect area, uint format);
     }
 }

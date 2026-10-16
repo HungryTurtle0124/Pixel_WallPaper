@@ -10,6 +10,10 @@
     <ApplicationManifest>../../src/PixelWallpaper.Renderer/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/Shared/*.cs" />
+    <Compile Include="../../src/PixelWallpaper.Renderer/Control/*.cs" />
+    <Compile Include="../../src/PixelWallpaper.App/SettingsStore.cs" />
+    <Compile Include="../../src/PixelWallpaper.App/RendererClient.cs" />
     <!-- Compile the actual implementation; no test framework or shipping dependency. -->
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageReference Include="Vortice.DXGI" Version="3.8.3" />

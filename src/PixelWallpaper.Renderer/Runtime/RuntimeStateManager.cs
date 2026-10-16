@@ -27,6 +27,14 @@ internal sealed class RuntimeStateManager : IDisposable
     public PauseReason Reasons { get; private set; }
     public bool IsPaused => Reasons != PauseReason.None;
     public uint TimingVersion { get; private set; }
+    public bool PauseWhileFullscreen { get; private set; } = true;
+
+    public void SetPauseWhileFullscreen(bool enabled)
+    {
+        if (PauseWhileFullscreen == enabled) return;
+        PauseWhileFullscreen = enabled;
+        RefreshFullscreen();
+    }
 
     public RuntimeStateManager(RenderWindow renderWindow)
     {
@@ -148,15 +156,16 @@ internal sealed class RuntimeStateManager : IDisposable
     {
         if (_disposed) return;
         bool canInspect = (Reasons & ~PauseReason.Fullscreen) == PauseReason.None;
-        if (canInspect) SetReason(PauseReason.Fullscreen, FullscreenDetector.IsForegroundFullscreen());
+        if (!PauseWhileFullscreen) SetReason(PauseReason.Fullscreen, false);
+        else if (canInspect) SetReason(PauseReason.Fullscreen, FullscreenDetector.IsForegroundFullscreen());
         // Poll geometry only once a second while interactive. Foreground events
         // react promptly; this catches in-place F11/resize/transition changes.
-        if (canInspect && !_timerRunning)
+        if (canInspect && PauseWhileFullscreen && !_timerRunning)
         {
             if (RuntimeNative.SetTimer(_window, 1, 1000, 0) == 0) throw new Win32Exception();
             _timerRunning = true;
         }
-        else if (!canInspect && _timerRunning)
+        else if ((!canInspect || !PauseWhileFullscreen) && _timerRunning)
         {
             RuntimeNative.KillTimer(_window, 1);
             _timerRunning = false;

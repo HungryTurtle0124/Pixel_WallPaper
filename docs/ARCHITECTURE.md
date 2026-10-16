@@ -1,6 +1,71 @@
 # Architecture notes
 
-Implementation details for the Milestones 1–4 prototype. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+Implementation details through Milestone 5. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+
+## WPF controller and renderer boundary
+
+`src/PixelWallpaper.App` is a small `net8.0-windows` WPF executable. The existing
+renderer remains a separate executable. WPF does not host the swap chain or load
+Vortice; its package graph has no third-party UI dependencies. The solution builds
+both projects and copies the complete renderer output into the controller's
+`Renderer/` subdirectory for build and publish. The project reference is a build
+dependency with assembly referencing/copy-local disabled.
+
+`MainWindow` contains the two buttons, data-driven wallpaper/mode lists, fullscreen
+checkbox, and status/error text. There is one wallpaper ID, `rainy-forest`. No scene
+manager, plugin discovery, tray lifetime, or MVVM framework was introduced.
+`RendererClient` owns/tracks a `Process`, serializes user actions through the UI,
+and uses process-exit events for status updates. There is no recurring UI timer.
+Startup endpoint discovery is bounded to seven seconds with 100 ms asynchronous
+delays; those checks stop after connection.
+
+`src/Shared` contains two small source files linked into both executables:
+`WallpaperSettings`/`PerformanceMode`, and `RendererProtocol`. A hidden
+`RendererControlWindow` receives scalar Win32 messages. The payload contains a
+validated FPS value (15, 30, or 60) and one fullscreen-pause bit. `SendMessageTimeout`
+bounds command waits to one second, and an acknowledgement/readback confirms
+application. No pointers, image data, or JSON cross this process boundary.
+All option changes execute on the existing message/render thread, so no locks or
+GPU-resource reconstruction are needed. The endpoint also exposes frame starts,
+pause reasons, and allocation counts for explicit verification; the WPF app does
+not continuously read these counters.
+
+A single registered startup broadcast allows an open WPF window to discover a
+new standalone renderer. The controller also checks for an existing renderer when
+opening. A compatible attached renderer receives the stored preferences; older
+prototypes can be stopped but need a restart before accepting live controls.
+Process IDs are checked before control/stop requests. The existing renderer mutex
+prevents duplicates; a second renderer exits with code 2 before desktop/D3D setup.
+A separate controller mutex prevents duplicate settings windows.
+
+`SettingsStore` reads/writes three JSON preferences under the current user's
+`LocalApplicationData/PixelWallpaper/settings.json`. Defaults are Rainy Forest,
+Balanced/30 FPS, and fullscreen pause enabled. Validation rejects unknown scene
+IDs/modes; missing or invalid data uses defaults with an error message for invalid
+files. Saves flush a temporary file and replace the destination on the same
+volume. Settings are loaded at startup, not watched/polled. Running state is not
+persisted, and the app does not automatically start a stopped wallpaper.
+
+Closing the settings window first waits for any in-flight control action, requests
+a clean stop, waits up to five seconds for process exit, then closes the UI. If
+the process cannot stop, the UI stays open and reports the failure. WPF's final
+Close is dispatched after its original Closing callback returns, including when
+the renderer was already stopped. Minimizing the UI leaves the wallpaper active.
+`ControllerLifetime` opens the owning controller's process handle in a renderer
+launched by the UI, validates PID plus creation time, and uses its exit event to
+post a close request if the controller disappears. It is installed before D3D
+setup. This is graceful process lifetime monitoring, not a polling heartbeat or
+a force-kill/device-hang recovery system. An already-running standalone renderer
+is stopped on normal controller close but has no retroactive parent-exit lease.
+
+Controller-launched startup errors are written to stderr for the UI instead of
+opening a renderer error dialog. Standalone error reporting remains available.
+Preferences do not affect the 480×270 scene, texture sampling, desktop hierarchy,
+mandatory WTS/power pause reasons, or resource ownership.
+
+References: [bounded Win32 messages](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw),
+[process exit events](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.enableraisingevents?view=net-8.0),
+and [WPF application lifetime](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/app-development/application-management-overview).
 
 ## Desktop host and recovery
 
@@ -175,6 +240,9 @@ and final upscale use the existing point-sampled fullscreen-triangle pipeline.
 | File/class | Responsibility |
 | --- | --- |
 | `Program.cs` | Owns startup, one-thread message/render loop, shutdown, and error reporting. |
+| `Control/RendererArguments.cs` | Validates standalone/controller launch options. |
+| `Control/RendererControlWindow.cs` | Acknowledges live settings on the render thread; supplies development counters. |
+| `Control/ControllerLifetime.cs` | Watches the owning controller process for unexpected exit. |
 | `Windows/RenderWindow.cs` | Creates the HWND, processes close/resize/DPI messages, and records minimization. |
 | `Windows/NativeMethods.cs` | Small set of Win32 interop declarations. |
 | `Windows/DesktopNative.cs` | Explorer discovery, parenting, styles, DPI, events, and hotkey interop. |
@@ -193,12 +261,12 @@ and final upscale use the existing point-sampled fullscreen-triangle pipeline.
 | `Scenes/RainyForestScene.cs` | Composes background and rain in draw order; owns its layers. |
 | `Scenes/Layers/StaticBackgroundLayer.cs` | Loads once, draws the same texture, and disposes it. |
 | `Scenes/Layers/RainParticleLayer.cs` | Reusable fixed arrays, delta-time motion, and batched rain geometry. |
-| `Timing/FramePacer.cs` | 30 FPS cap and blocking waits that also service window messages. |
+| `Timing/FramePacer.cs` | 15/30/60 FPS caps and blocking waits that also service window messages. |
 
 ## Timing and resource use
 
 The window and Direct3D immediate context run on the same thread. A monotonic
-`Stopwatch` deadline enforces at least 1/30 second between frame starts. A
+`Stopwatch` deadline enforces the selected 15/30/60 FPS interval (30 by default). A
 one-shot Windows waitable timer sleeps until the deadline;
 `MsgWaitForMultipleObjectsEx` also wakes for window messages. No `SpinWait`,
 `Sleep(0)`, periodic callbacks, or `timeBeginPeriod` is used. The timer requests
@@ -207,13 +275,15 @@ regularly round to about 46.9 ms (21 FPS). Older systems fall back to an ordinar
 timer. It wakes for frame deadlines only and is canceled while minimized.
 The ordinary-timer fallback allows 1 ms coalescing tolerance; high-resolution
 timers use zero tolerance. Scheduler jitter and presentation can make actual FPS lower
-than the cap; this is an upper limit, not a promise of exact 30 Hz cadence.
+than the cap; this is an upper limit, not a promise of exact cadence. A live mode
+change cancels the pending timer, schedules the new interval, and resets particle
+delta time. No device/scene recreation is involved.
 
 A two-buffer flip-discard swap chain uses a DXGI frame-latency waitable handle
 and maximum frame latency of one. Both deadline and DXGI readiness are required
 before drawing, including the first frame. Once readiness is consumed, the
 pacer remembers it until a frame begins; it never repeatedly waits on a ready
-handle. VSync handles presentation; it does not supply the 30 FPS cap.
+handle. VSync handles presentation; it does not supply the selected FPS cap.
 
 When minimized, the timer is canceled, timer/DXGI handles are excluded from the
 wait, and only window messages wake the thread. Resume resets elapsed time.
@@ -230,8 +300,9 @@ small internal texture. The background adds one 480×270 BGRA texture (about
 
 Resources are created once and reused. Resize releases all references to the old
 back buffer before `ResizeBuffers`; the fixed internal scene texture is retained.
-`using` releases the pacer, scene texture, renderer, runtime subscriptions/window,
-desktop host, then render window, including on exceptions.
+`using` releases the control endpoint, pacer, scene texture, renderer, runtime
+subscriptions/window, desktop host, controller monitor, then render window,
+including on exceptions.
 Renderer construction cleans up partial initialization. Shutdown clears context
 bindings, releases resources and COM wrappers, closes wait handles, flushes
 deferred destruction once, and releases context/device. No GC-forced cleanup or

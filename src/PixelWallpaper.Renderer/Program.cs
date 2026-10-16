@@ -3,6 +3,8 @@ using PixelWallpaper.Renderer.Runtime;
 using PixelWallpaper.Renderer.Scenes;
 using PixelWallpaper.Renderer.Timing;
 using PixelWallpaper.Renderer.Windows;
+using PixelWallpaper.Renderer.Control;
+using PixelWallpaper.Shared;
 
 namespace PixelWallpaper.Renderer;
 
@@ -15,21 +17,23 @@ internal static class Program
         {
             if (args.Length == 1 && args[0] == "--stop")
                 return DesktopHost.RequestStop() ? 0 : 1;
-            bool windowed = args.Length == 1 && args[0] == "--windowed";
-            if (args.Length != 0 && !windowed)
-                throw new ArgumentException("Options: --windowed (normal window), --stop (clean shutdown), or no arguments (desktop wallpaper).");
-            using var instance = new Mutex(true, "Local\\PixelWallpaper.Renderer.Instance", out bool firstInstance);
-            if (!firstInstance) throw new InvalidOperationException("Pixel Wallpaper is already running. Use --stop before starting another instance.");
+            var options = RendererArguments.Parse(args);
+            using var instance = new Mutex(true, RendererProtocol.RendererMutex, out bool firstInstance);
+            if (!firstInstance) { Console.Error.WriteLine("Pixel Wallpaper is already running."); return 2; }
 
-            DesktopHostInfo? hostInfo = windowed ? null : DesktopHostInfo.Discover();
-            // Reverse disposal: pacer -> scene -> renderer -> runtime -> host -> owned HWND.
+            DesktopHostInfo? hostInfo = options.Windowed ? null : DesktopHostInfo.Discover();
+            // Reverse disposal: control -> pacer -> scene -> D3D -> runtime -> host -> owner -> HWND.
             using var window = new RenderWindow(hostInfo?.DpiContext ?? 0);
+            using var owner = options.OwnerId == 0 ? null : new ControllerLifetime(options.OwnerId, options.OwnerStart, window.Handle);
             using var desktop = hostInfo is null ? null : new DesktopHost(window, hostInfo);
             using var runtime = new RuntimeStateManager(window);
+            runtime.SetPauseWhileFullscreen(options.Settings.PauseWhileFullscreen);
             using var renderer = new D3D11Renderer(window.Handle, window.Width, window.Height);
             string backgroundPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Backgrounds", "rainy-forest.png");
             using IScene scene = new RainyForestScene(renderer, backgroundPath);
             using var pacer = new FramePacer();
+            pacer.SetFrameRate((int)options.Settings.PerformanceMode);
+            using var control = new RendererControlWindow(window, pacer, runtime);
             window.Show();
 
             while (pacer.WaitForFrame(window, renderer.FrameLatencyHandle, runtime))
@@ -43,7 +47,7 @@ internal static class Program
         catch (Exception error)
         {
             Console.Error.WriteLine(error);
-            NativeMethods.MessageBoxW(0,
+            if (!args.Contains("--owner")) NativeMethods.MessageBoxW(0,
                 "The renderer stopped and released its resources.\n\n" + error,
                 "Pixel Wallpaper - rendering error", 0x10);
             return 1;

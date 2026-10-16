@@ -1,0 +1,56 @@
+<Window x:Class="PixelWallpaper.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pixel Wallpaper Settings" Width="560" Height="510"
+        MinWidth="480" MinHeight="480" WindowStartupLocation="CenterScreen"
+        Background="#F5F7F9" Loaded="OnLoaded" Closing="OnClosing">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="18,9" />
+            <Setter Property="MinWidth" Value="145" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" /><RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Pixel Wallpaper" FontSize="26" FontWeight="SemiBold" Foreground="#172D32" />
+            <TextBlock Text="A quiet pixel-art desktop." Margin="0,5,0,0" Foreground="#50636B" />
+        </StackPanel>
+        <StackPanel Grid.Row="1" Margin="0,0,0,15">
+            <Label Content="Wallpaper" Target="{Binding ElementName=WallpaperBox}" Padding="0,0,0,5" />
+            <ComboBox x:Name="WallpaperBox" DisplayMemberPath="Title" SelectedValuePath="Id"
+                      AutomationProperties.Name="Wallpaper" SelectionChanged="OnSettingsChanged" />
+        </StackPanel>
+        <StackPanel Grid.Row="2" Margin="0,0,0,15">
+            <Label Content="Performance mode" Target="{Binding ElementName=ModeBox}" Padding="0,0,0,5" />
+            <ComboBox x:Name="ModeBox" DisplayMemberPath="Title" SelectedValuePath="Mode"
+                      AutomationProperties.Name="Performance mode" SelectionChanged="OnSettingsChanged" />
+        </StackPanel>
+        <StackPanel Grid.Row="3" Margin="0,0,0,18">
+            <CheckBox x:Name="FullscreenBox" Content="Pause while fullscreen" IsChecked="True"
+                      Checked="OnFullscreenChanged" Unchecked="OnFullscreenChanged" />
+            <TextBlock Text="Lock, display-off, and suspend pausing always stay enabled."
+                       FontSize="12" Foreground="#50636B" TextWrapping="Wrap" Margin="0,7,0,0" />
+        </StackPanel>
+        <StackPanel Grid.Row="4">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="StartButton" Content="Start Wallpaper" Click="OnStart" Margin="0,0,10,0" />
+                <Button x:Name="StopButton" Content="Stop Wallpaper" Click="OnStop" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText" Text="Stopped" FontWeight="SemiBold" Margin="0,14,0,0"
+                       AutomationProperties.Name="Wallpaper status" />
+            <TextBlock x:Name="FeedbackText" Foreground="#8A3424" TextWrapping="Wrap" Margin="0,6,0,0" />
+        </StackPanel>
+        <TextBlock Grid.Row="6" Text="Settings save automatically. Closing this window stops the wallpaper."
+                   FontSize="12" Foreground="#50636B" TextWrapping="Wrap" Margin="0,16,0,0" />
+    </Grid>
+</Window>
