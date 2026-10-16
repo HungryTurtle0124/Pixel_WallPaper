@@ -14,8 +14,23 @@ internal static class RendererProtocol
     public const uint ReadFrameCount = 0x8022;
     public const uint ReadPauseReasons = 0x8023;
     public const uint ReadAllocationCount = 0x8024;
+    public const uint ReadScene = 0x8025;
     public const uint Close = 0x0010;
     public static readonly uint ReadyMessage = RegisterWindowMessageW("PixelWallpaper.Renderer.Ready.v1");
+
+    // Zero is the unsupported message response from a Milestone 5 renderer (Rainy Forest).
+    public static string SceneFromCode(nuint code) => code switch
+    {
+        0 or 1 => WallpaperSettings.RainyForest,
+        2 => WallpaperSettings.Campfire,
+        _ => throw new IOException("The renderer reported an unknown scene.")
+    };
+    public static int SceneCode(string scene) => scene switch
+    {
+        WallpaperSettings.RainyForest => 1,
+        WallpaperSettings.Campfire => 2,
+        _ => throw new ArgumentException("Unsupported scene.", nameof(scene))
+    };
 
     public static nuint Pack(WallpaperSettings settings) =>
         (nuint)(int)settings.PerformanceMode | (settings.PauseWhileFullscreen ? 0x100u : 0u);

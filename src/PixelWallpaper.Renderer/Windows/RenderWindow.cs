@@ -49,7 +49,7 @@ internal sealed class RenderWindow : IDisposable
                 throw new Win32Exception();
 
             Handle = NativeMethods.CreateWindowExW(0, ClassName,
-                "Pixel Wallpaper | Rainy Forest | 480x270 | 30 FPS cap",
+                "Pixel Wallpaper | 480x270",
                 NativeMethods.WsOverlappedWindow, unchecked((int)0x80000000), unchecked((int)0x80000000),
                 bounds.Right - bounds.Left, bounds.Bottom - bounds.Top, 0, 0, _instance, 0);
             if (Handle == 0)

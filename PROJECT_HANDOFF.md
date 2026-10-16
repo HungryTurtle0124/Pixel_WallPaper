@@ -4,12 +4,12 @@
 
 This document preserves the original design goals and future roadmap. It is not
 a request to restart implementation or build all planned features. **Milestones
-1–5 are complete; later milestones have not started.** See [README.md](README.md) for the
+1–6 are complete; later milestones have not started.** See [README.md](README.md) for the
 current build/run instructions, measured results, and limitations, and
 [architecture notes](docs/ARCHITECTURE.md) for implementation details.
 
 The current implementation uses a WPF controller and separate C# renderer targeting
-`net8.0-windows`, with Vortice/Direct3D 11, a 480×270 Rainy Forest scene, Win32 desktop
+`net8.0-windows`, with Vortice/Direct3D 11, 480×270 Rainy Forest and Campfire scenes, Win32 desktop
 hosting, performance-aware suspension, and 15/30/60 FPS modes. The broader project
 split, additional scenes, and interfaces proposed below are future options rather
 than requirements for the existing prototype. The repository's SDK selection is in
@@ -588,11 +588,16 @@ Do not spend excessive time making the UI visually fancy yet.
 
 ---
 
-# Future scenes
+# Milestone 6 — complete: Campfire and multi-scene selection
 
-Once the engine works, implement:
+Implemented: the existing scene abstraction supports Campfire alongside Rainy
+Forest. Campfire reuses the static background layer and adds an 8 FPS sprite
+strip, a fixed 12-ember pool and one faint flickering glow sprite. The controller
+saves scene selection and cleanly restarts only the renderer on scene changes.
+Performance modes, fullscreen preference and mandatory session/power pausing are
+retained. Original placeholder art and its generator are included. No new dependency.
 
-## Campfire
+## Campfire — implemented
 
 Uses:
 
@@ -601,9 +606,9 @@ Uses:
 - ember particle system
 - subtle light flicker
 
-This will test sprite animation.
+This verifies independent sprite timing and reused resources.
 
-## Giant Maple Tree on a Hill
+## Giant Maple Tree on a Hill — future, not started
 
 Uses:
 

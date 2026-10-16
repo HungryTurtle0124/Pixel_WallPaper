@@ -23,8 +23,8 @@
     <Compile Include="../../src/PixelWallpaper.Renderer/Timing/*.cs" />
     <Compile Include="../../src/PixelWallpaper.Renderer/Rendering/*.cs" />
     <Compile Include="../../src/PixelWallpaper.Renderer/Scenes/**/*.cs" />
-    <None Include="../../src/PixelWallpaper.Renderer/Assets/Backgrounds/rainy-forest.png"
-          Link="Assets/Backgrounds/rainy-forest.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../src/PixelWallpaper.Renderer/Assets/**/*.png"
+          Link="Assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="../../src/PixelWallpaper.Renderer/Rendering/Shaders/*.cso" WithCulture="false"
                       LogicalName="PixelWallpaper.Renderer.Rendering.Shaders.%(Filename)%(Extension)" />
   </ItemGroup>

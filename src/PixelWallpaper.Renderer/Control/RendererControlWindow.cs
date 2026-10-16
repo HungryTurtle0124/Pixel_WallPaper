@@ -16,10 +16,13 @@ internal sealed class RendererControlWindow : IDisposable
     private readonly nint _instance = NativeMethods.GetModuleHandleW(null);
     private nint _handle;
     private bool _registered;
+    private readonly int _sceneCode;
 
-    public RendererControlWindow(RenderWindow window, FramePacer pacer, RuntimeStateManager runtime)
+    public RendererControlWindow(RenderWindow window, FramePacer pacer, RuntimeStateManager runtime,
+        string wallpaper = WallpaperSettings.RainyForest)
     {
         _renderWindow = window; _pacer = pacer; _runtime = runtime;
+        _sceneCode = RendererProtocol.SceneCode(wallpaper);
         _procedure = WindowProcedure;
         try
         {
@@ -57,6 +60,7 @@ internal sealed class RendererControlWindow : IDisposable
                 case RendererProtocol.ReadFrameCount: return (nint)_pacer.FrameCount;
                 case RendererProtocol.ReadPauseReasons: return (nint)(int)_runtime.Reasons;
                 case RendererProtocol.ReadAllocationCount: return (nint)GC.GetAllocatedBytesForCurrentThread();
+                case RendererProtocol.ReadScene: return _sceneCode;
                 case RendererProtocol.Close: _renderWindow.RequestClose(); return 1;
             }
         }

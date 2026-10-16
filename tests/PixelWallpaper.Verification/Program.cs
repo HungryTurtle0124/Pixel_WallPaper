@@ -21,6 +21,21 @@ internal static class Verification
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--sample")
+        {
+            try { SceneVerification.SampleAsync(int.Parse(args[1])).GetAwaiter().GetResult(); return 0; }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
+        if (args.Length == 1 && args[0] == "--animation")
+        {
+            try { SceneVerification.CheckAnimationTiming(); return 0; }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
+        if (args.Length == 2 && args[0] == "--scenes")
+        {
+            try { SceneVerification.RunAsync(args[1]).GetAwaiter().GetResult(); return 0; }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
         if (args.Length == 1 && args[0] == "--settings")
         {
             try { ControllerVerification.CheckSettings(); return 0; }
@@ -32,7 +47,7 @@ internal static class Verification
             if (endpoint == 0) { Console.WriteLine("Renderer: stopped"); return 0; }
             PixelWallpaper.Shared.RendererProtocol.GetWindowThreadProcessId(endpoint, out uint id);
             nuint options = PixelWallpaper.Shared.RendererProtocol.Send(endpoint, PixelWallpaper.Shared.RendererProtocol.ReadOptions);
-            Console.WriteLine($"Renderer PID: {id}; FPS cap: {options & 0xFF}; pause fullscreen: {(options & 0x100) != 0}; pause reasons: {PixelWallpaper.Shared.RendererProtocol.Send(endpoint, PixelWallpaper.Shared.RendererProtocol.ReadPauseReasons)}");
+            Console.WriteLine($"Renderer PID: {id}; scene: {PixelWallpaper.Shared.RendererProtocol.SceneFromCode(PixelWallpaper.Shared.RendererProtocol.Send(endpoint, PixelWallpaper.Shared.RendererProtocol.ReadScene))}; FPS cap: {options & 0xFF}; pause fullscreen: {(options & 0x100) != 0}; pause reasons: {PixelWallpaper.Shared.RendererProtocol.Send(endpoint, PixelWallpaper.Shared.RendererProtocol.ReadPauseReasons)}");
             return 0;
         }
         if (args.Length == 2 && args[0] is "--controls" or "--owner-exit")

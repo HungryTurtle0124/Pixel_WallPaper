@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 using PixelWallpaper.Renderer.Scenes;
@@ -32,6 +33,12 @@ internal sealed class D3D11Renderer : IDisposable
     private ID3D11InputLayout? _inputLayout;
     private ID3D11SamplerState? _pointSampler;
     private ID3D11RasterizerState? _rasterizer;
+    // Created only for a scene using sprites; Rainy Forest does not pay this resource cost.
+    private ID3D11Buffer? _spriteVertices;
+    private ID3D11VertexShader? _spriteVertexShader;
+    private ID3D11PixelShader? _spritePixelShader;
+    private ID3D11InputLayout? _spriteLayout;
+    private ID3D11BlendState? _alphaBlend;
     private readonly int _vertexCapacity;
     private int _width;
     private int _height;
@@ -166,6 +173,52 @@ internal sealed class D3D11Renderer : IDisposable
     public TextureResource LoadBackgroundTexture(string imagePath) =>
         PngTextureLoader.Load(_device, imagePath, InternalWidth, InternalHeight);
 
+    public TextureResource LoadSpriteTexture(string imagePath, int width, int height)
+    {
+        if (_spriteVertices is null)
+        {
+            byte[] code = LoadShader("Sprite.vs.cso");
+            _spriteVertexShader = _device.CreateVertexShader(code);
+            _spritePixelShader = _device.CreatePixelShader(LoadShader("Sprite.ps.cso"));
+            _spriteLayout = _device.CreateInputLayout(
+            [
+                new InputElementDescription("POSITION", 0, Format.R32G32_Float, 0, 0),
+                new InputElementDescription("TEXCOORD", 0, Format.R32G32_Float, 8, 0),
+                new InputElementDescription("COLOR", 0, Format.R8G8B8A8_UNorm, 16, 0)
+            ], code);
+            _alphaBlend = _device.CreateBlendState(BlendDescription.NonPremultiplied);
+            _spriteVertices = _device.CreateBuffer((uint)(6 * Marshal.SizeOf<SpriteVertex>()),
+                BindFlags.VertexBuffer, ResourceUsage.Dynamic, CpuAccessFlags.Write);
+        }
+        // WIC converts to straight BGRA, paired with non-premultiplied alpha blending.
+        return PngTextureLoader.Load(_device, imagePath, width, height);
+    }
+
+    public unsafe void DrawSprite(TextureResource texture, int x, int y, int width, int height,
+        float u0 = 0, float u1 = 1, byte opacity = 255)
+    {
+        if (_spriteVertices is null) throw new InvalidOperationException("Load a sprite texture before drawing.");
+        uint color = 0x00FFFFFFu | ((uint)opacity << 24);
+        Vector2 tl = new(x * (2f / InternalWidth) - 1, 1 - y * (2f / InternalHeight));
+        Vector2 br = new((x + width) * (2f / InternalWidth) - 1, 1 - (y + height) * (2f / InternalHeight));
+        Span<SpriteVertex> quad = stackalloc SpriteVertex[6];
+        quad[0] = new(tl, new(u0, 0), color);
+        quad[1] = new(new(br.X, tl.Y), new(u1, 0), color);
+        quad[2] = new(new(tl.X, br.Y), new(u0, 1), color);
+        quad[3] = quad[2]; quad[4] = quad[1]; quad[5] = new(br, new(u1, 1), color);
+        var mapped = _context.Map(_spriteVertices, MapMode.WriteDiscard);
+        try { quad.CopyTo(new Span<SpriteVertex>((void*)mapped.DataPointer, 6)); }
+        finally { _context.Unmap(_spriteVertices, 0); }
+        _context.OMSetBlendState(_alphaBlend);
+        _context.IASetInputLayout(_spriteLayout);
+        _context.IASetVertexBuffer(0, _spriteVertices, (uint)sizeof(SpriteVertex));
+        _context.VSSetShader(_spriteVertexShader);
+        _context.PSSetShader(_spritePixelShader);
+        _context.PSSetShaderResource(0, texture.View);
+        _context.PSSetSampler(0, _pointSampler);
+        _context.Draw(6, 0);
+    }
+
     public void Render(IScene scene)
     {
         // The engine owns the frame and presentation. The scene supplies ordered draws.
@@ -182,6 +235,7 @@ internal sealed class D3D11Renderer : IDisposable
 
     public void DrawBackground(TextureResource texture)
     {
+        _context.OMSetBlendState(null);
         // Reuse the same point-sampled fullscreen-triangle pipeline as the upscale pass.
         _context.IASetInputLayout(null);
         _context.VSSetShader(_upscaleVertexShader);
@@ -191,7 +245,7 @@ internal sealed class D3D11Renderer : IDisposable
         _context.Draw(3, 0);
     }
 
-    public unsafe void DrawParticles(ReadOnlySpan<ColoredVertex> vertices)
+    public unsafe void DrawParticles(ReadOnlySpan<ColoredVertex> vertices, bool alphaBlend = false)
     {
         if (vertices.Length > _vertexCapacity)
             throw new ArgumentOutOfRangeException(nameof(vertices));
@@ -206,6 +260,7 @@ internal sealed class D3D11Renderer : IDisposable
             _context.Unmap(_vertices!, 0);
         }
 
+        _context.OMSetBlendState(alphaBlend ? _alphaBlend : null);
         _context.PSSetShaderResource(0, null!);
         _context.IASetInputLayout(_inputLayout);
         _context.IASetVertexBuffer(0, _vertices!, (uint)sizeof(ColoredVertex));
@@ -216,6 +271,7 @@ internal sealed class D3D11Renderer : IDisposable
 
     private void PresentScene()
     {
+        _context.OMSetBlendState(null);
         _context.OMSetRenderTargets(_backBufferView!);
         _context.ClearRenderTargetView(_backBufferView!, Background);
 
@@ -234,7 +290,7 @@ internal sealed class D3D11Renderer : IDisposable
         _context.PSSetSampler(0, _pointSampler);
         _context.Draw(3, 0);
 
-        // VSync prevents tearing; FramePacer supplies the independent 30 FPS upper limit.
+        // VSync prevents tearing; FramePacer supplies the selected FPS upper limit.
         _swapChain.Present(1, PresentFlags.None).CheckError();
     }
 
@@ -249,6 +305,11 @@ internal sealed class D3D11Renderer : IDisposable
         _sceneTarget?.Dispose();
         _sceneTexture?.Dispose();
         _vertices?.Dispose();
+        _spriteVertices?.Dispose();
+        _spriteLayout?.Dispose();
+        _spriteVertexShader?.Dispose();
+        _spritePixelShader?.Dispose();
+        _alphaBlend?.Dispose();
         _inputLayout?.Dispose();
         _rainVertexShader?.Dispose();
         _rainPixelShader?.Dispose();

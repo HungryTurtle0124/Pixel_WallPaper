@@ -6,11 +6,11 @@ using PixelWallpaper.Shared;
 
 internal static class ControllerVerification
 {
-    public static async Task RunAsync(string executable)
+    public static async Task RunAsync(string executable, string wallpaper = WallpaperSettings.RainyForest)
     {
         CheckSettings();
         using var client = new RendererClient(executable);
-        var options = new WallpaperSettings { PauseWhileFullscreen = false };
+        var options = new WallpaperSettings { Wallpaper = wallpaper, PauseWhileFullscreen = false };
         try
         {
             await client.StartAsync(options);
@@ -18,6 +18,7 @@ internal static class ControllerVerification
             RendererProtocol.GetWindowThreadProcessId(endpoint, out uint id);
             if (endpoint == 0) throw new Exception("No renderer endpoint.");
             using var renderer = Process.GetProcessById((int)id);
+            Require(RendererProtocol.SceneFromCode(RendererProtocol.Send(endpoint, RendererProtocol.ReadScene)) == wallpaper, "Selected scene");
             foreach (PerformanceMode mode in Enum.GetValues<PerformanceMode>())
             {
                 options = options with { PerformanceMode = mode };
@@ -29,7 +30,7 @@ internal static class ControllerVerification
                 await Task.Delay(3000);
                 double fps = ((long)RendererProtocol.Send(endpoint, RendererProtocol.ReadFrameCount) - frames) / clock.Elapsed.TotalSeconds;
                 long recurring = (long)RendererProtocol.Send(endpoint, RendererProtocol.ReadAllocationCount) - allocated;
-                Console.WriteLine($"{mode}: {fps:F3} FPS; {recurring} steady renderer-thread allocated bytes.");
+                Console.WriteLine($"{wallpaper} / {mode}: {fps:F3} FPS; {recurring} steady renderer-thread allocated bytes.");
                 Require(fps >= (int)mode * .85 && fps <= (int)mode * 1.05, "Frame rate for " + mode);
                 Require(recurring == 0, "Steady renderer allocations for " + mode);
                 Require(RendererProtocol.Send(endpoint, RendererProtocol.ReadOptions) == RendererProtocol.Pack(options), "Mode acknowledgement");
@@ -102,7 +103,7 @@ internal static class ControllerVerification
             using (owned) await owned.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
         }
         Console.WriteLine("Owner process exit: renderer shut down automatically.");
-        Console.WriteLine("PASS: Milestone 5 control/settings integration.");
+        Console.WriteLine($"PASS: control/settings integration for {wallpaper}.");
     }
 
     public static async Task ExitOwnerAsync(string executable)
@@ -130,6 +131,9 @@ internal static class ControllerVerification
             Require(new SettingsStore(path).Load(out string? warning) == saved && warning is null, "Settings persistence");
             store.Save(saved with { PerformanceMode = PerformanceMode.Smooth });
             Require(store.Load(out _).PerformanceMode == PerformanceMode.Smooth && !File.Exists(path + ".tmp"), "Atomic settings replacement");
+            store.Save(saved with { Wallpaper = WallpaperSettings.Campfire });
+            Require(new SettingsStore(path).Load(out warning) == saved with { Wallpaper = WallpaperSettings.Campfire } && warning is null,
+                "Campfire selection persistence");
             File.WriteAllText(path, "invalid json");
             Require(store.Load(out warning) == new WallpaperSettings() && warning is not null && File.ReadAllText(path) == "invalid json", "Malformed settings fallback");
             foreach (string invalid in new[] { "null", new string('x', 17000), "{\"Wallpaper\":\"missing\"}", "{\"PerformanceMode\":\"Ultra\"}" })

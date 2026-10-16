@@ -59,7 +59,7 @@ namespace PixelWallpaper
 }
 
 $shaderDirectory = Join-Path $PSScriptRoot '../src/PixelWallpaper.Renderer/Rendering/Shaders'
-foreach ($shader in @('Rain', 'Upscale')) {
+foreach ($shader in @('Rain', 'Upscale', 'Sprite')) {
     foreach ($stage in @('VS', 'PS')) {
         $profile = $stage.ToLowerInvariant() + '_5_0'
         $inputPath = Join-Path $shaderDirectory ($shader + '.hlsl')

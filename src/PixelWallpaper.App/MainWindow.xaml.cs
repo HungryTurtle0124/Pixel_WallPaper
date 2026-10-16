@@ -35,7 +35,11 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        WallpaperBox.ItemsSource = new[] { new WallpaperChoice(WallpaperSettings.RainyForest, "Rainy Forest") };
+        WallpaperBox.ItemsSource = new[]
+        {
+            new WallpaperChoice(WallpaperSettings.RainyForest, "Rainy Forest"),
+            new WallpaperChoice(WallpaperSettings.Campfire, "Campfire")
+        };
         ModeBox.ItemsSource = new[]
         {
             new ModeChoice(PerformanceMode.Eco, "Eco · 15 FPS"),

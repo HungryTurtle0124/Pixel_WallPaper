@@ -13,6 +13,7 @@ internal sealed class RendererClient : IDisposable
     private Task<string>? _errorOutput;
     private nint _endpoint;
     private nint _legacyStop;
+    private string _wallpaper = WallpaperSettings.RainyForest;
     private readonly string _executable;
     public RendererClient(string? executable = null) => _executable = executable ??
         Path.Combine(AppContext.BaseDirectory, "Renderer", "PixelWallpaper.Renderer.exe");
@@ -37,6 +38,8 @@ internal sealed class RendererClient : IDisposable
             if (candidate.ProcessName != "PixelWallpaper.Renderer" || candidate.HasExited)
             { candidate.Dispose(); return; }
             _process = candidate; _endpoint = endpoint; _legacyStop = legacy;
+            _wallpaper = endpoint == 0 ? WallpaperSettings.RainyForest :
+                RendererProtocol.SceneFromCode(RendererProtocol.Send(endpoint, RendererProtocol.ReadScene));
             StartedHere = false;
             Watch(candidate);
         }
@@ -58,12 +61,14 @@ internal sealed class RendererClient : IDisposable
         start.ArgumentList.Add(owner.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture));
         start.ArgumentList.Add("--fps");
         start.ArgumentList.Add(((int)settings.PerformanceMode).ToString(CultureInfo.InvariantCulture));
+        start.ArgumentList.Add("--scene");
+        start.ArgumentList.Add(settings.Wallpaper);
         if (!settings.PauseWhileFullscreen) start.ArgumentList.Add("--no-fullscreen-pause");
         var process = new Process { StartInfo = start };
         try
         {
             if (!process.Start()) throw new IOException("The renderer did not start.");
-            _process = process; StartedHere = true;
+            _process = process; StartedHere = true; _wallpaper = settings.Wallpaper;
             _errorOutput = process.StandardError.ReadToEndAsync();
             Watch(process);
             // Bounded startup-only discovery. There is no timer once connected.
@@ -71,7 +76,12 @@ internal sealed class RendererClient : IDisposable
             while (!process.HasExited && Environment.TickCount64 < deadline)
             {
                 _endpoint = await Task.Run(() => RendererProtocol.FindWindow(process.Id));
-                if (_endpoint != 0) { await ApplyAsync(settings); return; }
+                if (_endpoint != 0)
+                {
+                    if (RendererProtocol.SceneFromCode(RendererProtocol.Send(_endpoint, RendererProtocol.ReadScene)) != settings.Wallpaper)
+                        throw new IOException("The renderer did not start the requested scene. Rebuild the full solution.");
+                    await ApplyAsync(settings); return;
+                }
                 await Task.Delay(100);
             }
             string detail = process.HasExited && _errorOutput is not null ? await _errorOutput : "Startup timed out.";
@@ -97,7 +107,16 @@ internal sealed class RendererClient : IDisposable
     public async Task ApplyAsync(WallpaperSettings settings)
     {
         settings.Validate();
-        if (!IsRunning || _endpoint == 0) return;
+        if (!IsRunning) return;
+        if (_wallpaper != settings.Wallpaper)
+        {
+            // Scene resources have one owner for the entire renderer lifetime.
+            // Stop completely before starting the replacement; never run two scenes/processes.
+            await StopAsync();
+            await StartAsync(settings);
+            return;
+        }
+        if (_endpoint == 0) return;
         nuint packed = RendererProtocol.Pack(settings);
         nint endpoint = _endpoint;
         int expectedOwner = _process!.Id;

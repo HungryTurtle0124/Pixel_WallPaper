@@ -10,9 +10,9 @@ internal static class PngTextureLoader
     public static unsafe TextureResource Load(ID3D11Device device, string path, int width, int height)
     {
         if (!File.Exists(path))
-            throw new FileNotFoundException("Background PNG is missing. Restore Assets/Backgrounds/rainy-forest.png and rebuild.", path);
+            throw new FileNotFoundException("Scene PNG is missing. Restore the scene asset and rebuild.", path);
         if (!string.Equals(Path.GetExtension(path), ".png", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("The background must be a PNG image.");
+            throw new InvalidDataException("Scene textures must be PNG images.");
 
         // WIC is apartment-based COM. Pair even S_FALSE with CoUninitialize, and ensure
         // every WIC object is released before leaving this startup-only COM scope.
@@ -22,13 +22,13 @@ internal static class PngTextureLoader
             using var factory = new IWICImagingFactory();
             using var decoder = factory.CreateDecoderFromFileName(path, FileAccess.Read, DecodeOptions.CacheOnLoad);
             if (decoder.FrameCount != 1)
-                throw new InvalidDataException("Use one static PNG image for the background.");
+                throw new InvalidDataException("Use one static PNG image per texture (sprite sheets are supported).");
             using var frame = decoder.GetFrame(0);
             frame.GetSize(out uint imageWidth, out uint imageHeight);
             // Validate before allocating a decoded pixel buffer. A fixed-size asset also
             // avoids accidental blurry resizing or a large background texture in VRAM.
             if (imageWidth != width || imageHeight != height)
-                throw new InvalidDataException($"Background must be {width}x{height} pixels; received {imageWidth}x{imageHeight}. Prepare the image at the internal resolution before replacing it.");
+                throw new InvalidDataException($"Scene texture {Path.GetFileName(path)} must be {width}x{height} pixels; received {imageWidth}x{imageHeight}.");
 
             using var converter = factory.CreateFormatConverter();
             converter.Initialize(frame, PixelFormat.Format32bppBGRA).CheckError();

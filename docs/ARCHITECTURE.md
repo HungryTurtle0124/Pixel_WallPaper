@@ -1,6 +1,54 @@
 # Architecture notes
 
-Implementation details through Milestone 5. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+Implementation details through Milestone 6. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+
+## Campfire and scene selection
+
+`SceneFactory` selects `RainyForestScene` or `CampfireScene` from the validated
+`rainy-forest` / `campfire` setting. Each implements the same `IScene` interface.
+The existing Rainy Forest implementation and art are unchanged. No scene knows
+about WPF, Explorer, IPC, or Windows pause notifications.
+
+Campfire draws a reused `StaticBackgroundLayer`, a `LightweightFireGlowEffect`,
+a `SpriteAnimationLayer`, then an `EmberParticleLayer`. Glow precedes the fire
+so transparent light does not wash out the flame. There are five draw calls in
+total including the upscale pass; Rainy Forest retains its three draws.
+
+`SpriteAnimationClock` accumulates scene delta time at a configurable animation
+rate. The fire strip has eight 32×40 frames at 8 FPS, independent of the renderer's
+15/30/60 FPS cap. Only the selected UV cell changes on animation ticks. Paused
+scenes receive no updates; the unchanged pacer resets the resume delta, so fire,
+embers and glow do not advance through time spent paused.
+
+The sprite path adds one six-vertex dynamic buffer, one small vertex/pixel shader
+pair, an input layout, and a straight-alpha blend state. They are created lazily
+only when loading a sprite texture. A stack-allocated six-vertex quad uploads
+120 bytes per sprite draw. It reuses the existing point sampler, internal target,
+and presentation path. Opaque background and upscale draws explicitly reset the
+blend state. There are no extra render targets, constant buffers or postprocesses.
+WIC uploads immutable straight-BGRA textures once; no files stay open.
+
+`EmberParticleLayer` keeps 12 structs and 72 colored vertices. Recycle overwrites
+one struct, using a retained seeded PRNG. Integer pixel coordinates, upward motion,
+small horizontal drift and age-based alpha create a sparse effect. The existing
+particle buffer/color shader draws them with alpha blending. Rain keeps its
+original opaque path. Glow is a 64×48 quantized-alpha ellipse with a bounded
+scene-time accumulator and a small opacity oscillation; there is no bloom or blur.
+
+Changing only the scene makes `RendererClient` await a full clean stop before
+starting the selected scene with `--scene`. The controller stays open. This avoids
+runtime scene/resource replacement and keeps GPU ownership at process lifetime.
+Only one renderer exists at a time; startup failure leaves an actionable stopped
+state. Performance mode/fullscreen preferences travel to the replacement process.
+Changing those preferences within the same scene still uses the original live
+scalar messages. `ReadScene` adds a scalar scene identity for attaching to an
+existing renderer; the unsupported zero response from Milestone 5 means Rainy
+Forest. The existing packed performance/fullscreen payload is unchanged.
+
+The JSON schema and location are unchanged. Older Rainy Forest settings remain
+valid; `campfire` is the only additional accepted wallpaper ID. No dependency was
+added. Constructor failure releases partially loaded scene textures; normal
+shutdown releases the scene before the renderer's shared sprite pipeline.
 
 ## WPF controller and renderer boundary
 
@@ -12,7 +60,7 @@ both projects and copies the complete renderer output into the controller's
 dependency with assembly referencing/copy-local disabled.
 
 `MainWindow` contains the two buttons, data-driven wallpaper/mode lists, fullscreen
-checkbox, and status/error text. There is one wallpaper ID, `rainy-forest`. No scene
+checkbox, and status/error text. There are two wallpaper IDs, `rainy-forest` and `campfire`. No scene
 manager, plugin discovery, tray lifetime, or MVVM framework was introduced.
 `RendererClient` owns/tracks a `Process`, serializes user actions through the UI,
 and uses process-exit events for status updates. There is no recurring UI timer.
@@ -324,7 +372,7 @@ by Vortice. Required transitive Microsoft libraries include System.Text.Json,
 System.Text.Encodings.Web, and System.IO.Pipelines. Referencing these assemblies
 does not start background JSON processing or any browser/framework service.
 
-No shader compiler is loaded by the running renderer. The four small `.cso`
+No shader compiler is loaded by the running renderer. The six small `.cso`
 files are embedded resources, generated from the adjacent HLSL files. After
 editing HLSL, regenerate and rebuild:
 

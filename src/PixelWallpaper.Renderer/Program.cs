@@ -29,11 +29,10 @@ internal static class Program
             using var runtime = new RuntimeStateManager(window);
             runtime.SetPauseWhileFullscreen(options.Settings.PauseWhileFullscreen);
             using var renderer = new D3D11Renderer(window.Handle, window.Width, window.Height);
-            string backgroundPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Backgrounds", "rainy-forest.png");
-            using IScene scene = new RainyForestScene(renderer, backgroundPath);
+            using IScene scene = SceneFactory.Create(renderer, options.Settings.Wallpaper);
             using var pacer = new FramePacer();
             pacer.SetFrameRate((int)options.Settings.PerformanceMode);
-            using var control = new RendererControlWindow(window, pacer, runtime);
+            using var control = new RendererControlWindow(window, pacer, runtime, options.Settings.Wallpaper);
             window.Show();
 
             while (pacer.WaitForFrame(window, renderer.FrameLatencyHandle, runtime))
