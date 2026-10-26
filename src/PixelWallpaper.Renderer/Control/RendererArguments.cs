@@ -24,7 +24,7 @@ internal sealed record RendererArguments(bool Windowed, WallpaperSettings Settin
                 case "--owner" when index + 2 < args.Length:
                     owner = int.Parse(args[++index], CultureInfo.InvariantCulture);
                     start = long.Parse(args[++index], CultureInfo.InvariantCulture); break;
-                default: throw new ArgumentException("Options: --windowed, --stop, --scene rainy-forest|campfire, --fps 15|30|60, --no-fullscreen-pause.");
+                default: throw new ArgumentException("Options: --windowed, --stop, --scene rainy-forest|campfire|maple-tree, --fps 15|30|60, --no-fullscreen-pause.");
             }
         }
         if ((owner == 0) != (start == 0) || owner < 0 || start < 0)

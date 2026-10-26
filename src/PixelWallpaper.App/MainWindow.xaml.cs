@@ -38,7 +38,8 @@ public partial class MainWindow : Window
         WallpaperBox.ItemsSource = new[]
         {
             new WallpaperChoice(WallpaperSettings.RainyForest, "Rainy Forest"),
-            new WallpaperChoice(WallpaperSettings.Campfire, "Campfire")
+            new WallpaperChoice(WallpaperSettings.Campfire, "Campfire"),
+            new WallpaperChoice(WallpaperSettings.MapleTree, "Giant Maple Tree")
         };
         ModeBox.ItemsSource = new[]
         {

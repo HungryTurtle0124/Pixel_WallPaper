@@ -134,6 +134,9 @@ internal static class ControllerVerification
             store.Save(saved with { Wallpaper = WallpaperSettings.Campfire });
             Require(new SettingsStore(path).Load(out warning) == saved with { Wallpaper = WallpaperSettings.Campfire } && warning is null,
                 "Campfire selection persistence");
+            store.Save(saved with { Wallpaper = WallpaperSettings.MapleTree });
+            Require(new SettingsStore(path).Load(out warning) == saved with { Wallpaper = WallpaperSettings.MapleTree } && warning is null,
+                "Maple Tree selection persistence");
             File.WriteAllText(path, "invalid json");
             Require(store.Load(out warning) == new WallpaperSettings() && warning is not null && File.ReadAllText(path) == "invalid json", "Malformed settings fallback");
             foreach (string invalid in new[] { "null", new string('x', 17000), "{\"Wallpaper\":\"missing\"}", "{\"PerformanceMode\":\"Ultra\"}" })

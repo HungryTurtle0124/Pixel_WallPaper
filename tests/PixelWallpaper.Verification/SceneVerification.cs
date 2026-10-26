@@ -21,11 +21,20 @@ internal static class SceneVerification
             Require(changes == 80 && clock.Frame == 0, $"8 FPS animation at {fps} renderer FPS");
             clock.Update(0);
             Require(clock.Frame == 0, "Pause/resume zero delta must not advance animation");
+            var sway = new SpriteAnimationClock(64, 8);
+            int swayTicks = 0;
+            for (int i = 0; i < fps * 8; i++)
+            {
+                int before = sway.Frame;
+                sway.Update(1f / fps);
+                if (sway.Frame != before) swayTicks++;
+            }
+            Require(swayTicks == 64 && sway.Frame == 0, $"8-second sway cycle at {fps} renderer FPS");
         }
         var irregular = new SpriteAnimationClock(8, 8);
         irregular.Update(.375f);
         Require(irregular.Frame == 3, "Animation advances correctly across late updates");
-        Console.WriteLine("Animation clock: 8 FPS at 15/30/60 render FPS; paused time does not advance it.");
+        Console.WriteLine("Animation clock: 8 FPS sprite animation and 8-second sway cycle at 15/30/60 render FPS; paused time does not advance either.");
     }
 
     public static async Task RunAsync(string executable)
@@ -33,6 +42,7 @@ internal static class SceneVerification
         CheckAnimationTiming();
         await ControllerVerification.RunAsync(executable, WallpaperSettings.RainyForest);
         await ControllerVerification.RunAsync(executable, WallpaperSettings.Campfire);
+        await ControllerVerification.RunAsync(executable, WallpaperSettings.MapleTree);
         using var client = new RendererClient(executable);
         var options = new WallpaperSettings { PauseWhileFullscreen = false };
         try
@@ -43,7 +53,10 @@ internal static class SceneVerification
                 nint oldEndpoint = RendererProtocol.FindWindow();
                 RendererProtocol.GetWindowThreadProcessId(oldEndpoint, out uint oldId);
                 using var old = Process.GetProcessById((int)oldId);
-                options = options with { Wallpaper = cycle % 2 == 0 ? WallpaperSettings.Campfire : WallpaperSettings.RainyForest };
+                options = options with { Wallpaper = (cycle % 3) switch
+                {
+                    0 => WallpaperSettings.Campfire, 1 => WallpaperSettings.MapleTree, _ => WallpaperSettings.RainyForest
+                } };
                 await client.ApplyAsync(options);
                 nint current = RendererProtocol.FindWindow();
                 RendererProtocol.GetWindowThreadProcessId(current, out uint newId);
@@ -61,7 +74,7 @@ internal static class SceneVerification
             Require(RendererProtocol.FindWindow() == 0, "Scene-switch shutdown cleanup");
         }
         finally { if (client.IsRunning) await client.StopAsync(); }
-        Console.WriteLine("PASS: six scene switches; old process exits, options persist, reattach is stable, final clean shutdown.");
+        Console.WriteLine("PASS: six switches across three scenes; old process exits, options persist, reattach is stable, final clean shutdown.");
     }
 
     public static async Task SampleAsync(int seconds)

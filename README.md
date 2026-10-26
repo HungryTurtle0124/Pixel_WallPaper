@@ -4,14 +4,17 @@ A lightweight Windows wallpaper engine for procedural pixel-art scenes. It uses
 C#, .NET 8, Direct3D 11 through Vortice, and Win32 desktop integration to render
 behind the desktop icons without a browser engine or video playback.
 
-**Status: Milestones 1–6 complete.** A small WPF controller manages the separate
-renderer process. Rainy Forest and Campfire are available; later milestones have not started.
+**Status: Milestones 1–7 complete.** A small WPF controller manages the separate
+renderer process. Rainy Forest, Campfire, and Giant Maple Tree are available.
+Product-level improvements have not started.
 
 ## Current features
 
 - A static pixel-art forest background and 96 reusable rain particles.
 - Campfire: a static campsite, an 8 FPS fire sprite strip, 12 rising embers,
   and a small translucent flickering glow.
+- Giant Maple Tree: a static hill/tree, four small swaying canopy accents, three
+  grass patches, and at most four slowly falling leaves. Clouds remain static.
 - **480×270 internal rendering**, upscaled with nearest-neighbor / point sampling.
 - **Eco (15 FPS), Balanced (30 FPS, default), and Smooth (60 FPS)** caps using a
   blocking, message-aware waitable timer and DXGI readiness.
@@ -60,7 +63,8 @@ No shader regeneration or extra asset download is required for a normal build.
 & .\src\PixelWallpaper.App\bin\Release\net8.0-windows\PixelWallpaper.App.exe
 ```
 
-Choose **Rainy Forest** or **Campfire**, select a performance mode, then click **Start Wallpaper**.
+Choose **Rainy Forest**, **Campfire**, or **Giant Maple Tree**, select a performance
+mode, then click **Start Wallpaper**.
 **Stop Wallpaper** requests a clean renderer shutdown. The status reflects whether
 the tracked renderer process is alive, including while automatic pausing is active.
 Only one controller and one renderer can run in a Windows session.
@@ -105,7 +109,8 @@ Changing the wallpaper while running cleanly stops the renderer and starts the
 selected scene. The settings window remains open; only one renderer runs at a time.
 This deliberately keeps GPU resource ownership simple. A brief return to the saved
 Windows wallpaper during the switch is expected. The selected scene is saved as
-`"rainy-forest"` or `"campfire"` in the existing `Wallpaper` field; old settings remain valid.
+`"rainy-forest"`, `"campfire"`, or `"maple-tree"` in the existing `Wallpaper` field;
+old settings remain valid.
 Disabling fullscreen pausing leaves lock, display-off, disconnection and suspend
 pausing enabled. The controller has no recurring status timer or background scan.
 
@@ -126,8 +131,8 @@ The renderer can still run without WPF:
 ```
 
 Standalone defaults remain Rainy Forest, Balanced/30 FPS with fullscreen pausing enabled.
-Optional arguments are `--scene rainy-forest`, `--scene campfire`, `--fps 15`,
-`--fps 30`, `--fps 60`, and `--no-fullscreen-pause`.
+Optional arguments are `--scene rainy-forest`, `--scene campfire`, `--scene maple-tree`,
+`--fps 15`, `--fps 30`, `--fps 60`, and `--no-fullscreen-pause`.
 Direct launches do not read the controller's JSON preferences.
 
 For the original normal-window preview:
@@ -138,6 +143,10 @@ For the original normal-window preview:
 
 Append `--scene campfire` for the Campfire preview. Fire animation remains 8 FPS
 at all three render caps. Pausing freezes fire, embers and flicker together.
+Append `--scene maple-tree` for Giant Maple Tree. Canopy and grass offsets update
+at 8 Hz on an eight-second cycle, with 2-pixel and 1-pixel maximum movement.
+Only the small overlays move; the trunk, hill, and most of the crown stay static.
+One falling leaf is attempted every 3.5–5.5 seconds, using a four-slot pool.
 
 Preview starts with a 960×540 client area. Resizing favors integer scaling and
 centers the scene with dark borders. Minimize pauses rendering; restore resumes
@@ -159,37 +168,37 @@ Direct3D and Win32 resources and reveals the saved Windows wallpaper.
 
 ## Measured performance
 
-Milestone 6 renderer-only desktop comparison at 1920×1080 on a GTX 1650,
+Milestone 7 renderer-only desktop comparison at 1920×1080 on a GTX 1650,
 Balanced mode, controller closed:
 
-| Metric | Rainy Forest | Campfire |
-| --- | ---: | ---: |
-| FPS (10-second sample) | 29.67 | 29.66 |
-| Machine-normalized CPU | 0.267% | 0.178% |
-| Process 3D GPU average / peak | 0.4% / 3% | 0.2% / 1% |
-| RAM working set | 55.05 MiB | 57.46 MiB |
-| Private memory | 37.94 MiB | 38.54 MiB |
-| Dedicated GPU memory | 21.34 MiB | 21.42 MiB |
-| Steady renderer-thread allocations | 0 bytes | 0 bytes |
+| Metric | Rainy Forest | Campfire | Giant Maple Tree |
+| --- | ---: | ---: | ---: |
+| FPS (20-second sample) | 29.61 | 29.68 | 29.63 |
+| Machine-normalized CPU | 0.309% | 0.362% | 0.399% |
+| Process 3D GPU average / peak | 0.35% / 2% | 0.55% / 2% | 0.8% / 3% |
+| RAM working set | 52.95 MiB | 52.98 MiB | 53.08 MiB |
+| Private memory | 37.86 MiB | 37.83 MiB | 37.93 MiB |
+| Dedicated GPU memory | 21.35 MiB | 21.42 MiB | 21.36 MiB |
+| Steady renderer-thread allocations | 0 bytes | 0 bytes | 0 bytes |
 
-CPU/memory/GPU sampling lasted 16.09 seconds for Rainy Forest and 13.17 seconds
-for Campfire, after a three-second startup wait. GPU uses ten coarse WMI samples
-and excludes DWM composition. These short sequential runs show comparable cost;
-the lower Campfire CPU/GPU readings are not evidence of a guaranteed speedup.
-Campfire adds about 0.08 MiB of measured dedicated GPU memory. Its working set
-grew 1.90 MiB during startup/warmup while handles stayed unchanged; the sample
-does not establish long-session stability.
+CPU/memory/GPU sampling lasted 29.10 / 26.46 / 26.43 seconds, respectively, after
+five-second startup waits. GPU uses twenty coarse WMI samples and excludes DWM
+composition. These short sequential runs show the same general resource range;
+they do not establish long-session stability. Maple's working set decreased
+0.26 MiB during the sample and handle count decreased by one. The allocation
+sample spans leaf spawning, expiration and slot reuse.
 
-Both scenes passed live mode checks: Rainy Forest measured **14.65 / 29.52 / 57.91**
-FPS and Campfire **14.67 / 29.63 / 58.28** FPS in Eco/Balanced/Smooth. Each mode used
-the same scene process, with three-second samples after warmup and zero measured
-renderer-thread allocation bytes. Six alternating scene switches verified clean
-exit before replacement, preserved options and no overlapping renderer processes.
-Both scenes passed fullscreen pause/toggle and simulated lock/suspend tests.
-The real Campfire lock/unlock check recorded Windows `Locked → None` notifications;
-the user confirmed that fire and embers resumed normally, without a jump or error.
-The WPF selector, running scene changes, saved selection after controller restart,
-and close-window renderer shutdown were also checked.
+Live Eco/Balanced/Smooth checks measured **14.96 / 29.62 / 57.82** FPS for Rainy
+Forest, **14.93 / 29.65 / 58.16** for Campfire, and **14.93 / 29.30 / 58.24** for
+Giant Maple Tree. Each mode used the same scene process, with three-second samples
+after warmup and zero renderer-thread allocation bytes. Six switches across all
+three scenes verified clean exit before replacement, preserved preferences and
+stable attachment. All three passed fullscreen pause/toggle and simulated
+lock/suspend tests. Display-off/suspend hardware transitions are not forced.
+The real Maple lock/unlock check recorded `Locked → None` notifications; the user
+confirmed that sway and falling leaves resumed without a jump or error. The WPF
+selector saved `maple-tree`, restored it after controller restart, and started
+the selected scene successfully. Normal window close stops its renderer.
 
 Milestone 5 live-mode checks at 1920×1080 on a GTX 1650, using the same renderer process:
 
@@ -248,7 +257,7 @@ with an **opaque, exactly 480×270 PNG**, keeping its name. Rebuild and restart.
 The image is loaded once; there is no live reload. The build copies it beside the
 executable under `Assets/Backgrounds/`.
 
-Campfire also uses original, generated placeholder art. Files under
+Campfire and Giant Maple Tree also use original, generated placeholder art. Files under
 `src/PixelWallpaper.Renderer/Assets/` are:
 
 | Asset | Required size/layout | Replacement requirements |
@@ -257,6 +266,10 @@ Campfire also uses original, generated placeholder art. Files under
 | `Backgrounds/campfire.png` | 480×270 | Opaque static PNG. Put the campfire base near (256, 212); keep flame/embers out of the static artwork. |
 | `Sprites/campfire-fire.png` | 256×40 | Eight 32×40 frames in one horizontal row, left to right; transparent straight-alpha PNG. |
 | `Sprites/campfire-glow.png` | 64×48 | Transparent straight-alpha PNG with a faint warm glow; maximum bundled alpha is 52/255. |
+| `Backgrounds/maple-tree.png` | 480×270 | Opaque static hill and tree, including trunk and most of the canopy. |
+| `Sprites/maple-leaf-cluster.png` | 32×24 | One transparent straight-alpha canopy accent, reused four times. |
+| `Sprites/maple-grass.png` | 32×12 | One transparent straight-alpha grass patch, reused three times. |
+| `Sprites/maple-falling-leaf.png` | 16×8 | Two transparent 8×8 leaf silhouettes in one horizontal row, left to right. |
 
 The fire is drawn at (240, 174), each frame at native 32×40 size, looping at 8 FPS.
 Keep transparent padding inside each frame; do not use a checkerboard background
@@ -270,6 +283,19 @@ loaded once per renderer lifetime; there is no per-frame decoding or live reload
 `tools/Generate-Campfire.ps1` regenerates only the three Campfire placeholders;
 run it only when intentionally overwriting those files. No third-party art is bundled.
 
+Maple canopy overlays sit at (177,89), (214,53), (283,65), and (307,105), plus up to
+2 pixels of horizontal sway. Grass patches sit at (169,202), (292,205), and
+(352,224), plus 1 pixel of horizontal sway. Leaves originate across the lower crown
+(x=183–317, y=89–127). Keep the background complete underneath these overlays:
+they add small accents rather than covering holes in the static artwork.
+To change placement or dimensions, edit `Scenes/MapleTreeScene.cs`; leaf spawn
+bounds are in `Scenes/Layers/FallingLeafParticleLayer.cs`.
+
+`tools/Generate-MapleTree.ps1` recreates only the four original Maple placeholders.
+It overwrites those files only when explicitly invoked. Cloud silhouettes are
+baked into the background: moving clouds are intentionally skipped to keep this
+scene focused on localized motion, without another texture or draw layer.
+
 ## Project layout
 
 | Path | Purpose |
@@ -278,7 +304,7 @@ run it only when intentionally overwriting those files. No third-party art is bu
 | `src/PixelWallpaper.App/` | WPF controller, settings storage and process/control client. |
 | `src/Shared/` | Small options/protocol types linked into both executables. |
 | `Rendering/` within the project | Direct3D device, textures, shaders, and drawing. |
-| `Scenes/` within the project | `SceneFactory`, Rainy Forest/Campfire scenes and reusable layers. |
+| `Scenes/` within the project | `SceneFactory`, three scenes, and reusable background/animation/sway/particle layers. |
 | `Windows/` within the project | Win32 window, desktop host, fullscreen checks, and interop. |
 | `Runtime/` and `Timing/` within the project | Pause reasons, notifications, and frame pacing. |
 | `Control/` within the renderer | Message endpoint, command-line options and controller lifetime monitor. |
@@ -291,7 +317,7 @@ See [architecture notes](docs/ARCHITECTURE.md) for implementation details and
 ## Verification helper
 
 Stop the controller, wallpaper and other verification helpers before running.
-For both scenes, live modes, allocations, pause behavior and repeated scene switching:
+For all three scenes, live modes, allocations, pause behavior and repeated scene switching:
 
 ```powershell
 $renderer = (Resolve-Path .\src\PixelWallpaper.App\bin\Release\net8.0-windows\Renderer\PixelWallpaper.Renderer.exe).Path
@@ -300,7 +326,7 @@ dotnet run --project .\tests\PixelWallpaper.Verification -c Release -- --scenes 
 
 This checks saved settings/error fallback, live FPS and allocation counts, duplicate
 prevention, fullscreen-toggle behavior, mandatory lock/suspend pausing, and owner
-exit cleanup and six alternating scene switches. **One labelled fullscreen test
+exit cleanup and six switches across all three scenes. **One labelled fullscreen test
 window appears briefly for each scene and closes automatically.** `--controls`
 instead of `--scenes` retains the focused Rainy Forest controller checks.
 Synthetic session/power messages do not lock or suspend Windows. GUI Start/Stop,
@@ -327,7 +353,7 @@ dotnet run --project .\tests\PixelWallpaper.Verification -c Release -- --notific
 
 Use `--settings` instead of `--notifications` for non-visual JSON persistence,
 atomic replacement, and invalid/null/oversized settings-file checks.
-Use `--animation` for the non-visual 8 FPS animation-clock checks at 15/30/60 FPS.
+Use `--animation` for the non-visual sprite/sway clock checks at 15/30/60 FPS.
 With one renderer running, `--sample 10` reports FPS and render-thread allocated
 bytes over ten seconds; these are explicit development checks, not app polling.
 
@@ -338,7 +364,7 @@ when explicitly invoked, so avoid running it over replacement artwork.
 
 ## Current limitations
 
-- Two scenes and one primary-monitor wallpaper; no multi-monitor support.
+- Three scenes and one primary-monitor wallpaper; no multi-monitor support.
 - Explorer desktop hosting uses an undocumented shell arrangement that can change
   with Windows updates. Unrecognized hosts fail with an error. Explorer restart
   stops the renderer; relaunch it manually once Explorer is ready.
@@ -350,5 +376,5 @@ when explicitly invoked, so avoid running it over replacement artwork.
   power button may not generate an event. Actual sleep/hibernate and all mixed-DPI
   or game configurations have not been verified. Device loss stops the app; there
   is no automatic device recovery.
-- No Giant Maple Tree, tray icon, startup integration, wallpaper
+- No tray icon, startup integration, moving clouds, wallpaper
   editor, online features, browser rendering, or video playback.

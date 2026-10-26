@@ -23,12 +23,14 @@ internal static class RendererProtocol
     {
         0 or 1 => WallpaperSettings.RainyForest,
         2 => WallpaperSettings.Campfire,
+        3 => WallpaperSettings.MapleTree,
         _ => throw new IOException("The renderer reported an unknown scene.")
     };
     public static int SceneCode(string scene) => scene switch
     {
         WallpaperSettings.RainyForest => 1,
         WallpaperSettings.Campfire => 2,
+        WallpaperSettings.MapleTree => 3,
         _ => throw new ArgumentException("Unsupported scene.", nameof(scene))
     };
 

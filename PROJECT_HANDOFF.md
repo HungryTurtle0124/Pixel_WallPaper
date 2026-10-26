@@ -4,12 +4,12 @@
 
 This document preserves the original design goals and future roadmap. It is not
 a request to restart implementation or build all planned features. **Milestones
-1–6 are complete; later milestones have not started.** See [README.md](README.md) for the
+1–7 are complete; product-level improvements have not started.** See [README.md](README.md) for the
 current build/run instructions, measured results, and limitations, and
 [architecture notes](docs/ARCHITECTURE.md) for implementation details.
 
 The current implementation uses a WPF controller and separate C# renderer targeting
-`net8.0-windows`, with Vortice/Direct3D 11, 480×270 Rainy Forest and Campfire scenes, Win32 desktop
+`net8.0-windows`, with Vortice/Direct3D 11, three 480×270 scenes, Win32 desktop
 hosting, performance-aware suspension, and 15/30/60 FPS modes. The broader project
 split, additional scenes, and interfaces proposed below are future options rather
 than requirements for the existing prototype. The repository's SDK selection is in
@@ -608,7 +608,14 @@ Uses:
 
 This verifies independent sprite timing and reused resources.
 
-## Giant Maple Tree on a Hill — future, not started
+## Milestone 7 — complete: Giant Maple Tree on a Hill
+
+Implemented: a static hill and maple tree with four small canopy accents and
+three grass patches swaying at 8 Hz on a slow eight-second cycle, plus a fixed
+four-leaf pool with occasional spawning. The shared animation clock and sprite
+renderer are reused. Clouds stay static; no dependency or renderer redesign.
+Scene selection persists using the existing JSON format and renderer restart.
+Tray/startup/lifetime/recovery and other product-level improvements remain deferred.
 
 Uses:
 

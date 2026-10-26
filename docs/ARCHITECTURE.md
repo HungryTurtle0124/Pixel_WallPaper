@@ -1,11 +1,46 @@
 # Architecture notes
 
-Implementation details through Milestone 6. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+Implementation details through Milestone 7. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+
+## Giant Maple Tree
+
+`MapleTreeScene` reuses the static background and Campfire's existing sprite path.
+No renderer, shader, frame-pacer, pause-manager, or desktop-host changes are needed.
+The trunk, hill, clouds, and most canopy pixels are baked into one 480×270 image.
+Only four 32×24 canopy accents, three 32×12 grass patches, and up to four 8×8
+leaves move. The three small overlay textures total 5 KiB of decoded pixels.
+
+`LocalizedSwayLayer` is shared by canopy and grass. Each instance loads one texture
+once and retains its placement/offset arrays. Campfire's `SpriteAnimationClock`
+supplies a 64-tick cycle at 8 Hz (eight seconds), independent of the render cap.
+Offsets are recalculated only on clock changes and rounded to whole pixels;
+canopy amplitude is two pixels and grass amplitude one. Phase offsets keep the
+patches from moving in unison. No individual blades or branches are simulated.
+
+`FallingLeafParticleLayer` has four value-type slots and one retained PRNG. It
+attempts a single spawn after 1.5 scene seconds, then every 3.5–5.5 seconds. A full
+pool skips that attempt. Leaves drift down at 7–10 pixels/second for 10–13 seconds,
+with slight horizontal drift, a three-pixel oscillation, and fade-in/out. Two 8×8
+silhouettes alternate at 2 Hz instead of adding rotation machinery. Slots recycle
+in place. Draws reuse the existing six-vertex sprite buffer and stack quad.
+
+All motion uses scene delta time. The unchanged blocked pause/resume path freezes
+sway clocks, spawn countdown, positions and lifetime without a catch-up burst.
+There are 9–13 small draw calls including background/upscale, depending on the
+number of active leaves. No new dependency, shader, render target or frame buffer.
+Scene construction unwinds already-loaded textures on failure; disposal releases
+leaves, grass, canopy, then background before the renderer is disposed.
+
+Static clouds were chosen deliberately: localized tree/grass/leaf motion tests the
+milestone without another moving layer. The existing process restart on scene
+selection remains unchanged. `maple-tree` is one new accepted settings ID and IPC
+scene code 3; the JSON schema, defaults and live performance/fullscreen options
+are unchanged. Older settings files continue to load.
 
 ## Campfire and scene selection
 
-`SceneFactory` selects `RainyForestScene` or `CampfireScene` from the validated
-`rainy-forest` / `campfire` setting. Each implements the same `IScene` interface.
+`SceneFactory` selects `RainyForestScene`, `CampfireScene`, or `MapleTreeScene` from
+the validated scene setting. Each implements the same `IScene` interface.
 The existing Rainy Forest implementation and art are unchanged. No scene knows
 about WPF, Explorer, IPC, or Windows pause notifications.
 
@@ -46,7 +81,7 @@ existing renderer; the unsupported zero response from Milestone 5 means Rainy
 Forest. The existing packed performance/fullscreen payload is unchanged.
 
 The JSON schema and location are unchanged. Older Rainy Forest settings remain
-valid; `campfire` is the only additional accepted wallpaper ID. No dependency was
+valid; `campfire` and `maple-tree` are also accepted wallpaper IDs. No dependency was
 added. Constructor failure releases partially loaded scene textures; normal
 shutdown releases the scene before the renderer's shared sprite pipeline.
 
@@ -60,7 +95,7 @@ both projects and copies the complete renderer output into the controller's
 dependency with assembly referencing/copy-local disabled.
 
 `MainWindow` contains the two buttons, data-driven wallpaper/mode lists, fullscreen
-checkbox, and status/error text. There are two wallpaper IDs, `rainy-forest` and `campfire`. No scene
+checkbox, and status/error text. There are three wallpaper IDs. No scene
 manager, plugin discovery, tray lifetime, or MVVM framework was introduced.
 `RendererClient` owns/tracks a `Process`, serializes user actions through the UI,
 and uses process-exit events for status updates. There is no recurring UI timer.

@@ -10,6 +10,7 @@ internal static class SceneFactory
         WallpaperSettings.RainyForest => new RainyForestScene(renderer,
             Path.Combine(AppContext.BaseDirectory, "Assets", "Backgrounds", "rainy-forest.png")),
         WallpaperSettings.Campfire => new CampfireScene(renderer, Path.Combine(AppContext.BaseDirectory, "Assets")),
+        WallpaperSettings.MapleTree => new MapleTreeScene(renderer, Path.Combine(AppContext.BaseDirectory, "Assets")),
         _ => throw new ArgumentException("Unsupported scene.", nameof(scene))
     };
 }
