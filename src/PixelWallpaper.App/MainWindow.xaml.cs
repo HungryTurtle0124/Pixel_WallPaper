@@ -27,7 +27,7 @@ public partial class MainWindow : Window
             _ = Dispatcher.BeginInvoke(() =>
             {
                 if (!_ready || _closing || _busy) return;
-                _ = AttachAndApplyExistingAsync();
+                _ = SynchronizeAsync();
             });
         return 0;
     }
@@ -57,16 +57,28 @@ public partial class MainWindow : Window
         RefreshStatus();
     }
 
-    private async void OnLoaded(object sender, RoutedEventArgs args) => await AttachAndApplyExistingAsync();
-    private async Task AttachAndApplyExistingAsync()
+    private async void OnLoaded(object sender, RoutedEventArgs args) => await SynchronizeAsync();
+    private async void OnActivated(object? sender, EventArgs args)
     {
-        try
-        {
-            _renderer.AttachExisting(); RefreshStatus();
-            if (_renderer.CanApplySettings)
-                await RunOperationAsync(() => _renderer.ApplyAsync(_settings));
-        }
-        catch (Exception error) { FeedbackText.Text = error.Message; }
+        if (_ready) await SynchronizeAsync();
+    }
+    private Task SynchronizeAsync() => RunOperationAsync(async () =>
+    {
+        var live = await _renderer.ConnectAsync();
+        if (live is null) return;
+        bool changed = live != _settings;
+        ShowSettings(live);
+        if (changed) _store.Save(live); // Live renderer wins over stale disk preferences.
+        FeedbackText.Text = "";
+    }, clearFeedback: false);
+    private void ShowSettings(WallpaperSettings settings)
+    {
+        _ready = false;
+        _settings = settings;
+        WallpaperBox.SelectedValue = settings.Wallpaper;
+        ModeBox.SelectedValue = settings.PerformanceMode;
+        FullscreenBox.IsChecked = settings.PauseWhileFullscreen;
+        _ready = true;
     }
     private void OnRendererStateChanged()
     {
@@ -74,9 +86,17 @@ public partial class MainWindow : Window
             Dispatcher.BeginInvoke(() => { if (!_closed) RefreshStatus(); });
     }
     private async void OnStart(object sender, RoutedEventArgs args) =>
-        await RunOperationAsync(async () => { _store.Save(_settings); await _renderer.StartAsync(_settings); });
+        await RunOperationAsync(async () =>
+        {
+            var actual = await _renderer.StartAsync(_settings);
+            ShowSettings(actual); _store.Save(actual);
+        });
     private async void OnStop(object sender, RoutedEventArgs args) =>
-        await RunOperationAsync(_renderer.StopAsync);
+        await RunOperationAsync(async () =>
+        {
+            var actual = await _renderer.StopAsync();
+            if (actual is not null) { ShowSettings(actual); _store.Save(actual); }
+        });
     private async void OnSettingsChanged(object sender, SelectionChangedEventArgs args) => await SaveSettingsAsync();
     private async void OnFullscreenChanged(object sender, RoutedEventArgs args) => await SaveSettingsAsync();
 
@@ -84,25 +104,31 @@ public partial class MainWindow : Window
     {
         if (!_ready || _busy || _closing || WallpaperBox.SelectedValue is not string wallpaper ||
             ModeBox.SelectedValue is not PerformanceMode mode) return Task.CompletedTask;
-        _settings = new() { Wallpaper = wallpaper, PerformanceMode = mode, PauseWhileFullscreen = FullscreenBox.IsChecked == true };
+        var desired = new WallpaperSettings { Wallpaper = wallpaper, PerformanceMode = mode, PauseWhileFullscreen = FullscreenBox.IsChecked == true };
         return RunOperationAsync(async () =>
         {
-            _store.Save(_settings);
-            await _renderer.ApplyAsync(_settings);
+            var actual = await _renderer.ApplyAsync(desired);
+            ShowSettings(actual); _store.Save(actual);
         });
     }
 
-    private Task RunOperationAsync(Func<Task> action)
+    private Task RunOperationAsync(Func<Task> action, bool clearFeedback = true)
     {
         if (_busy || _closing) return Task.CompletedTask;
-        _operation = ExecuteAsync(action);
+        _operation = ExecuteAsync(action, clearFeedback);
         return _operation;
     }
-    private async Task ExecuteAsync(Func<Task> action)
+    private async Task ExecuteAsync(Func<Task> action, bool clearFeedback)
     {
-        _busy = true; FeedbackText.Text = ""; RefreshStatus();
+        _busy = true;
+        if (clearFeedback) FeedbackText.Text = "";
+        RefreshStatus();
         try { await action(); }
-        catch (Exception error) { FeedbackText.Text = error.Message; }
+        catch (Exception error)
+        {
+            if (_renderer.CurrentSettings is { } live) ShowSettings(live);
+            FeedbackText.Text = error.Message;
+        }
         finally { _busy = false; RefreshStatus(); }
     }
     private void RefreshStatus()
@@ -110,11 +136,9 @@ public partial class MainWindow : Window
         bool running = _renderer.IsRunning;
         StartButton.IsEnabled = !_busy && !_closing && !running;
         StopButton.IsEnabled = !_busy && !_closing && running;
-        WallpaperBox.IsEnabled = ModeBox.IsEnabled = FullscreenBox.IsEnabled = !_busy && !_closing;
-        StatusText.Text = _closing ? "Stopping wallpaper…" : _busy ? "Applying…" : running ?
-            (_renderer.StartedHere ? "Running" : "Running · started outside this controller") : "Stopped";
-        if (running && !_renderer.CanApplySettings && !_busy)
-            FeedbackText.Text = "An older renderer is running. Stop it, then Start to use these settings.";
+        WallpaperBox.IsEnabled = ModeBox.IsEnabled = FullscreenBox.IsEnabled = !_busy && !_closing && !_renderer.IsStopping;
+        StatusText.Text = _closing ? "Finishing command and closing controls…" : _busy ? "Applying…" :
+            running ? (_renderer.IsStopping ? "Stopping wallpaper…" : "Running") : "Stopped";
     }
 
     private async void OnClosing(object? sender, CancelEventArgs args)
@@ -126,12 +150,11 @@ public partial class MainWindow : Window
         try
         {
             await _operation;
-            await _renderer.StopAsync();
             _renderer.StateChanged -= OnRendererStateChanged;
             _renderer.Dispose();
             _closed = true;
-            // Stop may already be complete. Queue Close so we never reenter WPF's
-            // Closing event synchronously while its original callback is active.
+            // Disconnect only; the renderer is independent. Queue Close to avoid
+            // reentering WPF's original Closing callback synchronously.
             _ = Dispatcher.BeginInvoke(new Action(Close));
         }
         catch (Exception error)

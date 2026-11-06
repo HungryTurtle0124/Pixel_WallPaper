@@ -17,6 +17,7 @@ internal sealed class RendererControlWindow : IDisposable
     private nint _handle;
     private bool _registered;
     private readonly int _sceneCode;
+    private uint _revision = 1;
 
     public RendererControlWindow(RenderWindow window, FramePacer pacer, RuntimeStateManager runtime,
         string wallpaper = WallpaperSettings.RainyForest)
@@ -51,10 +52,20 @@ internal sealed class RendererControlWindow : IDisposable
             switch (message)
             {
                 case RendererProtocol.Apply:
+                case RendererProtocol.ApplyChecked:
+                    if (_renderWindow.CloseRequested) return 0;
+                    if (message == RendererProtocol.ApplyChecked && (uint)parameter != _revision) return 2;
                     if (!RendererProtocol.TryUnpack(value, out int fps, out bool fullscreen)) return 0;
+                    bool changed = fps != _pacer.FramesPerSecond || fullscreen != _runtime.PauseWhileFullscreen;
                     _pacer.SetFrameRate(fps);
                     _runtime.SetPauseWhileFullscreen(fullscreen);
+                    if (changed) _revision = unchecked(_revision + 1);
                     return 1;
+                case RendererProtocol.Identify: return (nint)RendererProtocol.Signature;
+                case RendererProtocol.ReadStatus:
+                    return (nint)(((ulong)_revision << 16) | ((uint)_sceneCode << 9) |
+                        (uint)_pacer.FramesPerSecond | (_runtime.PauseWhileFullscreen ? 0x100u : 0) |
+                        (_renderWindow.CloseRequested ? 0x800u : 0));
                 case RendererProtocol.ReadOptions:
                     return _pacer.FramesPerSecond | (_runtime.PauseWhileFullscreen ? 0x100 : 0);
                 case RendererProtocol.ReadFrameCount: return (nint)_pacer.FrameCount;

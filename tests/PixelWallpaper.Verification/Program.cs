@@ -21,6 +21,16 @@ internal static class Verification
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] is "--lifecycle" or "--lifecycle-start" or "--lifecycle-hold")
+        {
+            try
+            {
+                if (args[0] == "--lifecycle") LifecycleVerification.RunAsync(args[1]).GetAwaiter().GetResult();
+                else LifecycleVerification.StartProbeAsync(args[1], args[0] == "--lifecycle-hold").GetAwaiter().GetResult();
+                return 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
         if (args.Length == 2 && args[0] == "--sample")
         {
             try { SceneVerification.SampleAsync(int.Parse(args[1])).GetAwaiter().GetResult(); return 0; }

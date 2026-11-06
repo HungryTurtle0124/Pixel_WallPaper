@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using PixelWallpaper.App;
 using PixelWallpaper.Renderer.Runtime;
+using PixelWallpaper.Renderer.Windows;
 using PixelWallpaper.Shared;
 
 internal static class ControllerVerification
@@ -23,7 +24,9 @@ internal static class ControllerVerification
             {
                 options = options with { PerformanceMode = mode };
                 await client.ApplyAsync(options);
-                await Task.Delay(1000);
+                // Allow shell-startup notifications and interop initialization to settle
+                // before the first allocation sample. Later mode switches need less warmup.
+                await Task.Delay(mode == PerformanceMode.Eco ? 8000 : 3000);
                 long allocated = (long)RendererProtocol.Send(endpoint, RendererProtocol.ReadAllocationCount);
                 long frames = (long)RendererProtocol.Send(endpoint, RendererProtocol.ReadFrameCount);
                 var clock = Stopwatch.StartNew();
@@ -48,10 +51,22 @@ internal static class ControllerVerification
             {
                 try
                 {
-                    await Task.Delay(1500);
+                    // Windows may deny foreground activation to a background test process.
+                    // Wait for actual foreground ownership rather than reporting an engine failure.
+                    Console.WriteLine($"Fullscreen fixture PID {fixture.Id}: waiting for foreground activation.");
+                    long foregroundDeadline = Environment.TickCount64 + 25000;
+                    uint foregroundId;
+                    do
+                    {
+                        RendererProtocol.GetWindowThreadProcessId(RuntimeNative.GetForegroundWindow(), out foregroundId);
+                        if (foregroundId == fixture.Id) break;
+                        await Task.Delay(200);
+                    } while (Environment.TickCount64 < foregroundDeadline);
+                    Require(foregroundId == fixture.Id, "Bring the labelled fullscreen test window to the foreground before running this check");
                     await client.ApplyAsync(options with { PauseWhileFullscreen = true });
                     await Task.Delay(1500);
-                    Require(RendererProtocol.Send(endpoint, RendererProtocol.ReadPauseReasons) == (nuint)PauseReason.Fullscreen, "Fullscreen pause enabled");
+                    nuint reasons = RendererProtocol.Send(endpoint, RendererProtocol.ReadPauseReasons);
+                    Require(reasons == (nuint)PauseReason.Fullscreen, "Fullscreen pause enabled; actual reasons = " + reasons);
                     long before = (long)RendererProtocol.Send(endpoint, RendererProtocol.ReadFrameCount);
                     await Task.Delay(1000);
                     Require((long)RendererProtocol.Send(endpoint, RendererProtocol.ReadFrameCount) == before, "Fullscreen must stop frames");
@@ -88,7 +103,7 @@ internal static class ControllerVerification
         }
         finally { if (client.IsRunning) await client.StopAsync(); }
 
-        // An owner process exits without stopping/disposal; the renderer must close itself.
+        // The original controller exits without Stop/Dispose; the renderer must survive.
         var probeStart = new ProcessStartInfo(Environment.ProcessPath!)
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
         probeStart.ArgumentList.Add("--owner-exit"); probeStart.ArgumentList.Add(executable);
@@ -98,11 +113,17 @@ internal static class ControllerVerification
         Process? owned = null;
         try { owned = Process.GetProcessById(ownedId); } catch (ArgumentException) { }
         await probe.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        if (owned is not null)
+        Require(owned is not null, "Independent renderer must survive controller exit");
+        using (var independent = owned ?? throw new Exception("Independent renderer disappeared."))
         {
-            using (owned) await owned.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Require(!independent.HasExited, "Independent renderer must remain alive");
+            using var replacement = new RendererClient(executable);
+            var live = await replacement.ConnectAsync();
+            Require(live is not null && !live.PauseWhileFullscreen, "Reconnect reads live settings");
+            await replacement.StopAsync();
+            Require(independent.HasExited, "Reconnected explicit Stop cleans up renderer");
         }
-        Console.WriteLine("Owner process exit: renderer shut down automatically.");
+        Console.WriteLine("Controller exit: renderer survived; replacement controller reconnected and stopped it.");
         Console.WriteLine($"PASS: control/settings integration for {wallpaper}.");
     }
 

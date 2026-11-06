@@ -65,7 +65,7 @@ internal static class SceneVerification
                     "Replacement scene identity");
                 Require(RendererProtocol.Send(current, RendererProtocol.ReadOptions) == RendererProtocol.Pack(options), "Options retained across scene switch");
                 using var observer = new RendererClient(executable);
-                observer.AttachExisting();
+                await observer.ConnectAsync();
                 await observer.ApplyAsync(options); // Same scene: attach/apply must not restart it.
                 RendererProtocol.GetWindowThreadProcessId(RendererProtocol.FindWindow(), out uint attachedId);
                 Require(attachedId == newId, "Reattaching same scene must keep the renderer process");

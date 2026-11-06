@@ -4,13 +4,15 @@
 
 This document preserves the original design goals and future roadmap. It is not
 a request to restart implementation or build all planned features. **Milestones
-1–7 are complete; product-level improvements have not started.** See [README.md](README.md) for the
+1–8 are complete; later improvements have not started.** See [README.md](README.md) for the
 current build/run instructions, measured results, and limitations, and
 [architecture notes](docs/ARCHITECTURE.md) for implementation details.
 
 The current implementation uses a WPF controller and separate C# renderer targeting
 `net8.0-windows`, with Vortice/Direct3D 11, three 480×270 scenes, Win32 desktop
-hosting, performance-aware suspension, and 15/30/60 FPS modes. The broader project
+hosting, performance-aware suspension, and 15/30/60 FPS modes. Closing the WPF
+controller leaves the independent renderer running; reopening reconnects to live
+state and explicit Stop shuts it down. The broader project
 split, additional scenes, and interfaces proposed below are future options rather
 than requirements for the existing prototype. The repository's SDK selection is in
 `global.json`; its SDK version is independent of the .NET 8 runtime target.
@@ -561,7 +563,7 @@ Do not spend GPU cycles drawing a wallpaper nobody can see.
 
 Implemented: separate WPF Start/Stop/settings controller, one scene choice,
 Eco/Balanced/Smooth modes, optional fullscreen pausing, local JSON persistence,
-and clean shutdown ownership. Closing the controller stops the wallpaper.
+and clean shutdown ownership. Milestone 8 supersedes its original close-to-stop behavior.
 Tray integration and Start with Windows remain deferred.
 
 Only after the rendering core is stable, add the WPF control application.
@@ -615,7 +617,7 @@ three grass patches swaying at 8 Hz on a slow eight-second cycle, plus a fixed
 four-leaf pool with occasional spawning. The shared animation clock and sprite
 renderer are reused. Clouds stay static; no dependency or renderer redesign.
 Scene selection persists using the existing JSON format and renderer restart.
-Tray/startup/lifetime/recovery and other product-level improvements remain deferred.
+Tray/startup/recovery and other product-level improvements remain deferred.
 
 Uses:
 
@@ -625,7 +627,16 @@ Uses:
 - grass movement
 - optional slow clouds
 
-This will test slow independent animation and scene composition.
+This verifies slow independent animation and scene composition.
+
+## Milestone 8 — complete: Independent Renderer and Controller Lifecycle
+
+Closing/crashing the controller leaves the renderer running, without a parent
+process lease or redirected controller pipes. Reopening reads authoritative live
+scene/performance/fullscreen preferences and saves them to the existing JSON file.
+Named mutexes enforce single instances and serialize explicit commands. Atomic
+status/revision checks reject stale mutations; Stop/hotkey/--stop retain clean
+shutdown. No extra service, always-running WPF process, or automatic restart.
 
 ---
 

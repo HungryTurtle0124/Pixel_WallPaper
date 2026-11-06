@@ -4,9 +4,9 @@ A lightweight Windows wallpaper engine for procedural pixel-art scenes. It uses
 C#, .NET 8, Direct3D 11 through Vortice, and Win32 desktop integration to render
 behind the desktop icons without a browser engine or video playback.
 
-**Status: Milestones 1–7 complete.** A small WPF controller manages the separate
+**Status: Milestones 1–8 complete.** A small WPF controller manages the separate
 renderer process. Rainy Forest, Campfire, and Giant Maple Tree are available.
-Product-level improvements have not started.
+The renderer continues independently when the controller exits. Later improvements have not started.
 
 ## Current features
 
@@ -74,17 +74,18 @@ startup project, choose **Release**, and press **Ctrl+F5**. A debugger can affec
 performance measurements. The build copies the renderer, dependencies and asset
 into the app's `Renderer/` folder; keep that folder beside the controller.
 
-**Closing the settings window stops the wallpaper, then exits the controller.**
-Minimizing the controller leaves the wallpaper running. If shutdown times out,
-the settings window stays open with an error so Stop can be retried. Renderers
-launched by the controller watch its process handle and request a clean exit if
-it disappears unexpectedly. There is no tray icon or hidden controller mode.
+**Closing the settings window exits the controller and leaves the wallpaper running.**
+Minimizing behaves normally. Closing waits for an in-flight command, disconnects,
+then exits WPF completely. A controller crash also leaves the independent renderer
+running. Use **Stop Wallpaper** to stop it explicitly. No tray icon, service, or
+hidden WPF process remains after closing the window.
 
-An already-running renderer is detected when the controller opens. A new renderer
-also announces startup, so an open controller can find it without polling. Stored
-preferences are applied when connecting to a compatible renderer, and closing
-the controller stops that attached renderer too. An older prototype must be
-stopped and restarted before live settings can be applied.
+Reopening the controller reconnects to the existing renderer without starting a
+duplicate. Live scene/FPS/fullscreen settings are authoritative: the controller
+reads them into the UI and saves them to JSON, rather than applying stale disk
+preferences. Focus activation and one startup broadcast refresh status without
+idle polling. Stop pre-Milestone-8 renderers with `--stop` before upgrading; their
+older lifetime/protocol is not silently adopted.
 
 ## Settings and live changes
 
@@ -113,6 +114,24 @@ Windows wallpaper during the switch is expected. The selected scene is saved as
 old settings remain valid.
 Disabling fullscreen pausing leaves lock, display-off, disconnection and suspend
 pausing enabled. The controller has no recurring status timer or background scan.
+
+While connected, live renderer settings win. With no renderer, saved preferences
+are used for the next Start. Commands are serialized with a session-local named
+mutex; scene switching holds it through clean stop/start. A revision-checked
+settings command rejects stale changes instead of overwriting another controller's
+work. The UI refreshes the actual values so the change can be retried.
+
+IPC requests time out after one second, startup discovery after seven seconds,
+and explicit Stop waits up to five seconds. Waiting for another controller's
+transaction is bounded to fifteen seconds, on a worker only during commands.
+No renderer is force-killed or restarted automatically. If a connection is lost,
+activate/reopen the controller to refresh, then retry the explicit action.
+
+Controller launches are independent Windows shell launches without redirected
+stdio pipes. Background-mode fatal errors are kept in one bounded local file,
+`%LOCALAPPDATA%\PixelWallpaper\renderer-error.txt`; it is written only on failure.
+Startup error readback checks PID and process creation time to avoid showing an
+old failure. Standalone launches keep their error dialog.
 
 To create a framework-dependent folder for distribution:
 
@@ -156,7 +175,8 @@ as startup project and set its command-line argument to `--windowed`.
 
 ## Stop the wallpaper
 
-Use **Stop Wallpaper** or close the settings window. The standalone command remains available:
+Reopen the settings window and use **Stop Wallpaper**. Closing the window does
+not stop the wallpaper. The standalone command remains available:
 
 ```powershell
 & .\src\PixelWallpaper.Renderer\bin\Release\net8.0-windows\PixelWallpaper.Renderer.exe --stop
@@ -167,6 +187,40 @@ Use `--stop` if another application owns that shortcut. Shutdown releases owned
 Direct3D and Win32 resources and reveals the saved Windows wallpaper.
 
 ## Measured performance
+
+Milestone 8: Giant Maple Tree, Balanced mode, started by WPF and measured after
+the controller process had exited completely. No extra resident service/helper:
+
+| Metric | Milestone 7 Maple | Milestone 8, controller closed |
+| --- | ---: | ---: |
+| FPS | 29.63 | 29.67 |
+| Machine-normalized CPU | 0.399% | 0.337% |
+| Process 3D GPU average / peak | 0.8% / 3% | 0.05% / 1% |
+| RAM working set | 53.08 MiB | 55.18 MiB |
+| Private memory | 37.93 MiB | 38.03 MiB |
+| Dedicated GPU memory | 21.36 MiB | 21.35 MiB |
+| Warm renderer-thread allocations | 0 bytes | 0 bytes |
+
+The M8 FPS/allocation sample lasted 20 seconds; CPU/GPU/memory sampling lasted
+28.94 seconds with twenty coarse WMI GPU samples. Working set and handle count
+were unchanged during the sample, and the controller process count stayed zero.
+This removes the WPF process's separate resident cost (the M5 idle measurement
+was 113 MiB working set / 45 MiB private memory). Process working sets include
+shared pages, so that is not a claim of exactly 113 MiB of system-wide RAM saved.
+GPU samples exclude DWM and vary with drivers/background activity; lower counters
+in a short run do not establish a guaranteed speedup. Renderer cost remains in
+the same general range as M7. Long-session/device-loss recovery is not established.
+
+The lifecycle helper passed concurrent starts, normal controller exit, forced
+test-controller crash, abandoned command-mutex recovery, stale-revision rejection,
+renderer crash/explicit restart, and explicit Stop. Sixty-four reconnect/dispose
+cycles stayed within three handles of the helper's baseline. The three-scene mode/pause suite
+passed with zero warmed renderer-thread allocations. Its first scene allocation
+sample allows shell-startup notifications/interop to settle before measuring;
+startup itself is not allocation-free. The real lock/unlock check passed with
+WPF absent (`Locked → None`, user-confirmed smooth resume). WPF Start/close/reopen,
+same-PID reconnection despite deliberately stale JSON, scene switching after
+reconnect, forced WPF exit/survival, and the Stop button were also verified.
 
 Milestone 7 renderer-only desktop comparison at 1920×1080 on a GTX 1650,
 Balanced mode, controller closed:
@@ -198,7 +252,7 @@ lock/suspend tests. Display-off/suspend hardware transitions are not forced.
 The real Maple lock/unlock check recorded `Locked → None` notifications; the user
 confirmed that sway and falling leaves resumed without a jump or error. The WPF
 selector saved `maple-tree`, restored it after controller restart, and started
-the selected scene successfully. Normal window close stops its renderer.
+the selected scene successfully. M8 supersedes M7's original close-to-stop policy.
 
 Milestone 5 live-mode checks at 1920×1080 on a GTX 1650, using the same renderer process:
 
@@ -307,7 +361,7 @@ scene focused on localized motion, without another texture or draw layer.
 | `Scenes/` within the project | `SceneFactory`, three scenes, and reusable background/animation/sway/particle layers. |
 | `Windows/` within the project | Win32 window, desktop host, fullscreen checks, and interop. |
 | `Runtime/` and `Timing/` within the project | Pause reasons, notifications, and frame pacing. |
-| `Control/` within the renderer | Message endpoint, command-line options and controller lifetime monitor. |
+| `Control/` within the renderer | Lightweight message endpoint and command-line options; no parent lifetime watcher. |
 | `tests/PixelWallpaper.Verification/` | Separate, non-shipping regression helper. |
 | `tools/` | Development-only profiling, shader compilation, and placeholder generation. |
 
@@ -317,6 +371,19 @@ See [architecture notes](docs/ARCHITECTURE.md) for implementation details and
 ## Verification helper
 
 Stop the controller, wallpaper and other verification helpers before running.
+For Milestone 8 lifecycle checks (no visible fullscreen fixture):
+
+```powershell
+$renderer = (Resolve-Path .\src\PixelWallpaper.App\bin\Release\net8.0-windows\Renderer\PixelWallpaper.Renderer.exe).Path
+dotnet run --project .\tests\PixelWallpaper.Verification -c Release -- --lifecycle "$renderer"
+```
+
+This launches concurrent test controllers, checks live-state authority and stale
+revision rejection, repeats reconnect/dispose, deliberately kills a test controller
+while it owns the command mutex, and deliberately crashes a test renderer. It
+verifies survival/reconnection and explicit recovery/Stop, then cleans up. Run it
+only with the normal wallpaper stopped. These crash tests are never run by the app.
+
 For all three scenes, live modes, allocations, pause behavior and repeated scene switching:
 
 ```powershell
@@ -325,8 +392,8 @@ dotnet run --project .\tests\PixelWallpaper.Verification -c Release -- --scenes 
 ```
 
 This checks saved settings/error fallback, live FPS and allocation counts, duplicate
-prevention, fullscreen-toggle behavior, mandatory lock/suspend pausing, and owner
-exit cleanup and six switches across all three scenes. **One labelled fullscreen test
+prevention, fullscreen-toggle behavior, mandatory lock/suspend pausing, controller
+exit survival/reconnection, and six switches across all three scenes. **One labelled fullscreen test
 window appears briefly for each scene and closes automatically.** `--controls`
 instead of `--scenes` retains the focused Rainy Forest controller checks.
 Synthetic session/power messages do not lock or suspend Windows. GUI Start/Stop,
@@ -365,6 +432,15 @@ when explicitly invoked, so avoid running it over replacement artwork.
 ## Current limitations
 
 - Three scenes and one primary-monitor wallpaper; no multi-monitor support.
+- IPC is for the current Windows session and compatible renderer version. Process
+  handle/creation time, executable identity, window PID and protocol signature are
+  checked; the local Win32 message channel is not an authentication/security boundary.
+  Run controller and renderer at the same elevation. Stop old-version renderers
+  with `--stop` before replacing application binaries.
+- A controller crash during the stop/start gap of a scene switch may leave the
+  wallpaper stopped. A slow startup can continue after the controller's timeout;
+  reopen it to reconnect or use `--stop`. There is no background restart service
+  or forced recovery of an unresponsive GPU/process.
 - Explorer desktop hosting uses an undocumented shell arrangement that can change
   with Windows updates. Unrecognized hosts fail with an error. Explorer restart
   stops the renderer; relaunch it manually once Explorer is ready.

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Pixel Wallpaper Settings" Width="560" Height="510"
         MinWidth="480" MinHeight="480" WindowStartupLocation="CenterScreen"
-        Background="#F5F7F9" Loaded="OnLoaded" Closing="OnClosing">
+        Background="#F5F7F9" Loaded="OnLoaded" Activated="OnActivated" Closing="OnClosing">
     <Window.Resources>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="18,9" />
@@ -50,7 +50,7 @@
                        AutomationProperties.Name="Wallpaper status" />
             <TextBlock x:Name="FeedbackText" Foreground="#8A3424" TextWrapping="Wrap" Margin="0,6,0,0" />
         </StackPanel>
-        <TextBlock Grid.Row="6" Text="Settings save automatically. Closing this window stops the wallpaper."
+        <TextBlock Grid.Row="6" Text="Closing this window leaves the wallpaper running. Use Stop Wallpaper to stop it."
                    FontSize="12" Foreground="#50636B" TextWrapping="Wrap" Margin="0,16,0,0" />
     </Grid>
 </Window>

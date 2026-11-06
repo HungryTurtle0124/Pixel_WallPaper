@@ -22,9 +22,8 @@ internal static class Program
             if (!firstInstance) { Console.Error.WriteLine("Pixel Wallpaper is already running."); return 2; }
 
             DesktopHostInfo? hostInfo = options.Windowed ? null : DesktopHostInfo.Discover();
-            // Reverse disposal: control -> pacer -> scene -> D3D -> runtime -> host -> owner -> HWND.
+            // Reverse disposal: control -> pacer -> scene -> D3D -> runtime -> host -> HWND.
             using var window = new RenderWindow(hostInfo?.DpiContext ?? 0);
-            using var owner = options.OwnerId == 0 ? null : new ControllerLifetime(options.OwnerId, options.OwnerStart, window.Handle);
             using var desktop = hostInfo is null ? null : new DesktopHost(window, hostInfo);
             using var runtime = new RuntimeStateManager(window);
             runtime.SetPauseWhileFullscreen(options.Settings.PauseWhileFullscreen);
@@ -45,8 +44,8 @@ internal static class Program
         }
         catch (Exception error)
         {
-            Console.Error.WriteLine(error);
-            if (!args.Contains("--owner")) NativeMethods.MessageBoxW(0,
+            if (args.Contains("--background")) RendererDiagnostics.Write(error);
+            else NativeMethods.MessageBoxW(0,
                 "The renderer stopped and released its resources.\n\n" + error,
                 "Pixel Wallpaper - rendering error", 0x10);
             return 1;

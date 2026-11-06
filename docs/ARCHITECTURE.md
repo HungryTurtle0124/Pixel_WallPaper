@@ -1,6 +1,56 @@
 # Architecture notes
 
-Implementation details through Milestone 7. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+Implementation details through Milestone 8. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+
+## Independent lifecycle and live-state authority
+
+The controller now owns only its connection handle, not the renderer lifetime.
+`ControllerLifetime` and private `--owner` arguments were removed. Start uses
+`ShellExecute` for a standalone renderer WinExe, with no controller-owned stdio
+pipes. Normal Close waits for the current command, disposes the connection, then
+exits WPF. A controller crash also leaves the renderer alive. Explicit Stop sends
+a bounded close request and waits for process exit. The existing hotkey/`--stop`
+and Explorer-host loss paths remain unchanged.
+
+`RendererClient.ConnectAsync` discovers the hidden control HWND, retains the real
+process handle, checks its image/session, window PID and protocol signature, then
+reads one atomic packed status message. This carries scene, performance mode,
+fullscreen preference, stopping flag and revision. The live renderer is authoritative:
+WPF updates controls under its initialization guard and saves those values to JSON.
+Stopped-state preferences still come from JSON. Start finding an existing renderer
+adopts it without applying stale launch defaults. Reconnection occurs at opening,
+focus activation and the existing Ready broadcast, not on an idle timer.
+
+The renderer-instance mutex still prevents duplicate renderers, including raw
+simultaneous executable launches. A separate `Local\PixelWallpaper.Commands.v1`
+mutex serializes controller transactions across processes. `RendererCommandGate`
+waits at most fifteen seconds and releases in finally; abandoned ownership after
+a crashed controller is accepted. A command runs synchronously on one Task worker
+so OS mutex ownership never crosses an await. There is no resident gate thread or
+service. A scene switch retains the gate until old exit and replacement startup.
+
+Before mutation, the client compares the observed process creation time/revision
+with fresh live status. The renderer also atomically checks the expected revision
+on its message thread before applying FPS/fullscreen changes. Stale settings are
+rejected and actual values are refreshed for retry. Process handles and HWND PID
+checks guard stale/reused identities. Status reads, acknowledgements and settings
+decoding allocate only during explicit controller work; the warmed renderer loop
+has no new allocation or resource recreation path. Stop ignores preference-only
+revision changes but rejects a replacement process unseen by that client.
+
+Each IPC send is bounded to one second, startup discovery to seven seconds and
+process-exit waiting to five seconds. Only startup retries discovery every 100 ms.
+An initializing or stopping renderer produces a bounded wait/actionable error;
+it is never force-killed or automatically restarted. A controller crash between
+the Stop and Start of a scene change can leave the wallpaper stopped. Reopen and
+explicitly Start to recover; a slow initialization may finish after its timeout.
+
+`RendererDiagnostics` writes a single bounded local error file only on a background
+renderer failure. Startup readback matches PID plus creation time. No log stream
+stays open; direct standalone launches retain their error dialog. The local Win32
+IPC/version checks are compatibility/identity checks, not an authentication boundary.
+Same session/elevation and a compatible renderer are required; older renderers
+must be stopped via `--stop` before upgrading. No automatic Explorer recovery.
 
 ## Giant Maple Tree
 
@@ -97,13 +147,13 @@ dependency with assembly referencing/copy-local disabled.
 `MainWindow` contains the two buttons, data-driven wallpaper/mode lists, fullscreen
 checkbox, and status/error text. There are three wallpaper IDs. No scene
 manager, plugin discovery, tray lifetime, or MVVM framework was introduced.
-`RendererClient` owns/tracks a `Process`, serializes user actions through the UI,
+`RendererClient` tracks a `Process` handle, serializes user actions through the UI,
 and uses process-exit events for status updates. There is no recurring UI timer.
-Startup endpoint discovery is bounded to seven seconds with 100 ms asynchronous
-delays; those checks stop after connection.
+Startup endpoint discovery is bounded to seven seconds with 100 ms waits on a
+command worker; those checks stop after connection.
 
-`src/Shared` contains two small source files linked into both executables:
-`WallpaperSettings`/`PerformanceMode`, and `RendererProtocol`. A hidden
+`src/Shared` contains small source files linked into both executables:
+settings, protocol, command gate and error diagnostics. A hidden
 `RendererControlWindow` receives scalar Win32 messages. The payload contains a
 validated FPS value (15, 30, or 60) and one fullscreen-pause bit. `SendMessageTimeout`
 bounds command waits to one second, and an acknowledgement/readback confirms
@@ -115,8 +165,8 @@ not continuously read these counters.
 
 A single registered startup broadcast allows an open WPF window to discover a
 new standalone renderer. The controller also checks for an existing renderer when
-opening. A compatible attached renderer receives the stored preferences; older
-prototypes can be stopped but need a restart before accepting live controls.
+opening. A compatible attached renderer supplies live preferences; older
+prototypes need a clean stop/restart before using the new lifecycle protocol.
 Process IDs are checked before control/stop requests. The existing renderer mutex
 prevents duplicates; a second renderer exits with code 2 before desktop/D3D setup.
 A separate controller mutex prevents duplicate settings windows.
@@ -129,20 +179,10 @@ files. Saves flush a temporary file and replace the destination on the same
 volume. Settings are loaded at startup, not watched/polled. Running state is not
 persisted, and the app does not automatically start a stopped wallpaper.
 
-Closing the settings window first waits for any in-flight control action, requests
-a clean stop, waits up to five seconds for process exit, then closes the UI. If
-the process cannot stop, the UI stays open and reports the failure. WPF's final
-Close is dispatched after its original Closing callback returns, including when
-the renderer was already stopped. Minimizing the UI leaves the wallpaper active.
-`ControllerLifetime` opens the owning controller's process handle in a renderer
-launched by the UI, validates PID plus creation time, and uses its exit event to
-post a close request if the controller disappears. It is installed before D3D
-setup. This is graceful process lifetime monitoring, not a polling heartbeat or
-a force-kill/device-hang recovery system. An already-running standalone renderer
-is stopped on normal controller close but has no retroactive parent-exit lease.
-
-Controller-launched startup errors are written to stderr for the UI instead of
-opening a renderer error dialog. Standalone error reporting remains available.
+Closing the settings window waits for any in-flight control action and disconnects
+without Stop. WPF's final Close is dispatched after its original Closing callback
+returns. Minimizing leaves both processes active; closing removes the WPF process.
+Only an explicit Stop waits for renderer shutdown and reports timeout for retry.
 Preferences do not affect the 480×270 scene, texture sampling, desktop hierarchy,
 mandatory WTS/power pause reasons, or resource ownership.
 
@@ -325,7 +365,7 @@ and final upscale use the existing point-sampled fullscreen-triangle pipeline.
 | `Program.cs` | Owns startup, one-thread message/render loop, shutdown, and error reporting. |
 | `Control/RendererArguments.cs` | Validates standalone/controller launch options. |
 | `Control/RendererControlWindow.cs` | Acknowledges live settings on the render thread; supplies development counters. |
-| `Control/ControllerLifetime.cs` | Watches the owning controller process for unexpected exit. |
+| `Shared/RendererCommandGate.cs` | Bounded cross-process serialization of explicit commands. |
 | `Windows/RenderWindow.cs` | Creates the HWND, processes close/resize/DPI messages, and records minimization. |
 | `Windows/NativeMethods.cs` | Small set of Win32 interop declarations. |
 | `Windows/DesktopNative.cs` | Explorer discovery, parenting, styles, DPI, events, and hotkey interop. |
@@ -384,7 +424,7 @@ small internal texture. The background adds one 480×270 BGRA texture (about
 Resources are created once and reused. Resize releases all references to the old
 back buffer before `ResizeBuffers`; the fixed internal scene texture is retained.
 `using` releases the control endpoint, pacer, scene texture, renderer, runtime
-subscriptions/window, desktop host, controller monitor, then render window,
+subscriptions/window, desktop host, then render window,
 including on exceptions.
 Renderer construction cleans up partial initialization. Shutdown clears context
 bindings, releases resources and COM wrappers, closes wait handles, flushes

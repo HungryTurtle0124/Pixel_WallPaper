@@ -15,6 +15,10 @@ internal static class RendererProtocol
     public const uint ReadPauseReasons = 0x8023;
     public const uint ReadAllocationCount = 0x8024;
     public const uint ReadScene = 0x8025;
+    public const uint ReadStatus = 0x8026;
+    public const uint Identify = 0x8027;
+    public const uint ApplyChecked = 0x8028;
+    public const uint Signature = 0x50575008; // Pixel Wallpaper, lifecycle protocol 8.
     public const uint Close = 0x0010;
     public static readonly uint ReadyMessage = RegisterWindowMessageW("PixelWallpaper.Renderer.Ready.v1");
 
@@ -59,11 +63,25 @@ internal static class RendererProtocol
         return result;
     }
 
-    public static nuint Send(nint window, uint message, nuint value = 0)
+    public static nuint Send(nint window, uint message, nuint value = 0, nint parameter = 0)
     {
-        if (window == 0 || SendMessageTimeoutW(window, message, value, 0, 0x22, 1000, out nuint result) == 0)
+        if (window == 0 || SendMessageTimeoutW(window, message, value, parameter, 0x22, 1000, out nuint result) == 0)
             throw new IOException("The renderer did not respond to the control request.");
         return result;
+    }
+
+    public static WallpaperSettings DecodeStatus(nuint status, out uint revision, out bool stopping)
+    {
+        if (!TryUnpack(status & 0x1FF, out int fps, out bool fullscreen) ||
+            (status & 0xF000) != 0 || ((status >> 9) & 3) == 0)
+            throw new IOException("The renderer reported invalid status.");
+        revision = (uint)(status >> 16);
+        stopping = (status & 0x800) != 0;
+        return new WallpaperSettings
+        {
+            Wallpaper = SceneFromCode((status >> 9) & 3),
+            PerformanceMode = (PerformanceMode)fps, PauseWhileFullscreen = fullscreen
+        };
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
