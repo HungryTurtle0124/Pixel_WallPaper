@@ -4,9 +4,9 @@ A lightweight Windows wallpaper engine for procedural pixel-art scenes. It uses
 C#, .NET 8, Direct3D 11 through Vortice, and Win32 desktop integration to render
 behind the desktop icons without a browser engine or video playback.
 
-**Status: Milestones 1–8 complete.** A small WPF controller manages the separate
-renderer process. Rainy Forest, Campfire, and Giant Maple Tree are available.
-The renderer continues independently when the controller exits. Later improvements have not started.
+**Status: Milestones 1–9 implemented.** A small WPF controller and optional tray
+control an independent renderer. Rainy Forest, Campfire, and Giant Maple Tree
+are available. Windows sign-in startup is optional and defaults to off.
 
 ## Current features
 
@@ -19,6 +19,7 @@ The renderer continues independently when the controller exits. Later improvemen
 - **Eco (15 FPS), Balanced (30 FPS, default), and Smooth (60 FPS)** caps using a
   blocking, message-aware waitable timer and DXGI readiness.
 - WPF Start/Stop controls, scene selection, fullscreen-pause preference, and saved settings.
+- Optional tray controls and per-user Windows sign-in startup.
 - Desktop wallpaper mode behind icons, plus a normal Win32 preview window.
 - Automatic pause/resume for foreground fullscreen applications, session lock or
   disconnection, display-off, and Windows suspend/resume notifications.
@@ -34,8 +35,9 @@ drawing, and presentation stop; GPU resources remain resident for quick resume.
 - Windows x64 and a Direct3D 11 GPU supporting feature level 11.0.
 - **Windows 11 25H2 was tested. The Windows 10 desktop-host branch is not yet verified.**
   The Win32 APIs used require Windows 10 version 1703 or later.
-- The **.NET 8 Windows Desktop Runtime (WPF)** for the controller. The standalone
-  renderer needs the .NET 8 runtime. Both executables are framework-dependent.
+- The **.NET 8 Windows Desktop Runtime** for WPF and the optional Windows Forms
+  tray. The standalone renderer needs the .NET 8 runtime. All three executables
+  are framework-dependent.
 - To build, the **.NET SDK selected by `global.json`**: currently 10.0.402, with
   roll-forward within newer .NET 10 feature bands. This SDK builds the
   `net8.0-windows` target; the SDK version and runtime target are separate choices.
@@ -43,11 +45,12 @@ drawing, and presentation stop; GPU resources remain resident for quick resume.
 NuGet restores `Vortice.Direct3D11`, `Vortice.DXGI`, and `Vortice.Direct2D1` 3.8.3.
 The last package supplies WIC image-decoding bindings; rendering uses Direct3D 11.
 Package graphs are recorded in each project's `packages.lock.json`. The controller
-uses built-in WPF and JSON APIs; no additional UI toolkit/package was added.
+uses built-in WPF and JSON APIs. The tray uses the Windows Forms `NotifyIcon`.
 
 ## Build
 
-Close the controller/renderer before rebuilding. From the repository root in PowerShell:
+Close the settings window, exit the tray if open, and stop the renderer before
+rebuilding. From the repository root in PowerShell:
 
 ```powershell
 dotnet restore .\PixelWallpaper.sln --locked-mode
@@ -71,21 +74,44 @@ Only one controller and one renderer can run in a Windows session.
 
 In Visual Studio, open `PixelWallpaper.sln`, set **PixelWallpaper.App** as the
 startup project, choose **Release**, and press **Ctrl+F5**. A debugger can affect
-performance measurements. The build copies the renderer, dependencies and asset
-into the app's `Renderer/` folder; keep that folder beside the controller.
+performance measurements. Keep the `Renderer/` and `Tray/` build output folders
+beside the controller executable.
 
 **Closing the settings window exits the controller and leaves the wallpaper running.**
 Minimizing behaves normally. Closing waits for an in-flight command, disconnects,
 then exits WPF completely. A controller crash also leaves the independent renderer
-running. Use **Stop Wallpaper** to stop it explicitly. No tray icon, service, or
-hidden WPF process remains after closing the window.
+running. Use **Stop Wallpaper** to stop it explicitly. An open tray stays available
+after the settings window closes.
 
 Reopening the controller reconnects to the existing renderer without starting a
 duplicate. Live scene/FPS/fullscreen settings are authoritative: the controller
-reads them into the UI and saves them to JSON, rather than applying stale disk
-preferences. Focus activation and one startup broadcast refresh status without
-idle polling. Stop pre-Milestone-8 renderers with `--stop` before upgrading; their
-older lifetime/protocol is not silently adopted.
+reads them into the UI and saves them to JSON. Focus activation, process exit,
+and renderer-ready and preference-change notifications refresh status without
+idle polling. Stop pre-Milestone-8 renderers with `--stop` before upgrading.
+
+## Optional tray and Windows startup
+
+- Click **Show Tray Icon**, then right-click the notification area icon. It
+  may appear under the taskbar overflow arrow. The menu shows wallpaper status
+  and lets you choose a scene, change FPS, toggle fullscreen pausing, and start
+  or stop the wallpaper. **Open Settings** opens or restores the WPF window.
+- **Exit Tray** removes the icon and exits the tray process. The wallpaper keeps
+  running. Use **Show Tray Icon** again whenever you want it back.
+- Check **Start Wallpaper with Windows** to register the renderer for your next
+  Windows sign-in. It starts with the saved scene, FPS cap, and fullscreen-pause
+  preference. The settings window and tray stay closed. Uncheck the box to
+  remove registration. This leaves the current wallpaper session running.
+- Startup uses the current user's `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+  value `PixelWallpaper`. The checkbox shows whether the entry is registered.
+  Windows can delay the launch, and Startup Apps can disable it independently.
+  If you move the app folder, uncheck and recheck the option to update the stored
+  path. Registration needs no administrator rights.
+  [Windows Run key documentation](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
+
+The sign-in command can be tested manually using the bundled renderer with
+`--startup` after stopping the current renderer. It retries Explorer desktop
+discovery for about 15 seconds. A failure exits and writes the diagnostic file
+described below. The command does not change startup registration.
 
 ## Settings and live changes
 
@@ -101,8 +127,8 @@ Preferences are stored per user in **`%LOCALAPPDATA%\PixelWallpaper\settings.jso
 
 Changes save automatically using a temporary file and atomic replacement. A
 missing file uses defaults; an invalid/unreadable file shows a warning and uses
-defaults. Running state is not saved: opening the controller does not automatically
-launch a wallpaper. No database or registry settings are used.
+defaults. Running state is not saved, and opening the controller leaves a stopped
+wallpaper stopped. Windows startup registration is separate from the JSON preferences.
 
 Performance mode and fullscreen-pause changes are acknowledged on the renderer's
 message thread and take effect without restarting it or rebuilding GPU resources.
@@ -113,17 +139,18 @@ Windows wallpaper during the switch is expected. The selected scene is saved as
 `"rainy-forest"`, `"campfire"`, or `"maple-tree"` in the existing `Wallpaper` field;
 old settings remain valid.
 Disabling fullscreen pausing leaves lock, display-off, disconnection and suspend
-pausing enabled. The controller has no recurring status timer or background scan.
+pausing enabled. The controller and tray have no recurring status timer or background scan.
 
 While connected, live renderer settings win. With no renderer, saved preferences
-are used for the next Start. Commands are serialized with a session-local named
-mutex; scene switching holds it through clean stop/start. A revision-checked
-settings command rejects stale changes instead of overwriting another controller's
-work. The UI refreshes the actual values so the change can be retried.
+are used for the next Start. The tray and WPF share a session-local command mutex
+that covers scene switching and saving preferences. The renderer revision guards
+live changes, and the client checks saved preferences before accepting changes
+while stopped. If a change is stale, the control surface refreshes for retry.
 
-IPC requests time out after one second, startup discovery after seven seconds,
-and explicit Stop waits up to five seconds. Waiting for another controller's
-transaction is bounded to fifteen seconds, on a worker only during commands.
+IPC requests time out after one second, and explicit Stop waits up to five seconds.
+After a manual Start, the control surface waits up to seven seconds for the
+renderer endpoint. Waiting for another controller's transaction is bounded to
+fifteen seconds, on a worker only during commands.
 No renderer is force-killed or restarted automatically. If a connection is lost,
 activate/reopen the controller to refresh, then retry the explicit action.
 
@@ -139,7 +166,7 @@ To create a framework-dependent folder for distribution:
 dotnet publish .\src\PixelWallpaper.App -c Release --self-contained false -o .\publish
 ```
 
-Keep the whole published folder, including `Renderer/`.
+Keep the whole published folder, including `Renderer/` and `Tray/`.
 
 ## Standalone renderer and preview
 
@@ -152,7 +179,7 @@ The renderer can still run without WPF:
 Standalone defaults remain Rainy Forest, Balanced/30 FPS with fullscreen pausing enabled.
 Optional arguments are `--scene rainy-forest`, `--scene campfire`, `--scene maple-tree`,
 `--fps 15`, `--fps 30`, `--fps 60`, and `--no-fullscreen-pause`.
-Direct launches do not read the controller's JSON preferences.
+Use `--startup` to load the saved preferences and wait for Explorer readiness.
 
 For the original normal-window preview:
 
@@ -175,8 +202,7 @@ as startup project and set its command-line argument to `--windowed`.
 
 ## Stop the wallpaper
 
-Reopen the settings window and use **Stop Wallpaper**. Closing the window does
-not stop the wallpaper. The standalone command remains available:
+Use **Stop Wallpaper** in settings or the tray. The standalone command remains available:
 
 ```powershell
 & .\src\PixelWallpaper.Renderer\bin\Release\net8.0-windows\PixelWallpaper.Renderer.exe --stop
@@ -187,6 +213,27 @@ Use `--stop` if another application owns that shortcut. Shutdown releases owned
 Direct3D and Win32 resources and reveals the saved Windows wallpaper.
 
 ## Measured performance
+
+Milestone 9 used the same Giant Maple Tree renderer at Balanced on Windows 11
+25H2 and a GTX 1650. Each Milestone 9 row uses a 20-second sample. CPU is
+normalized to the whole machine. GPU values are per-process 3D-engine averages
+and exclude DWM. Working sets include shared pages.
+
+| Configuration | FPS | Renderer CPU / GPU | Renderer working set / private | Control CPU / GPU | Control working set / private |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Milestone 8, renderer alone | 29.67 | 0.337% / 0.05% | 55.18 / 38.03 MiB | — | — |
+| Milestone 9, renderer alone | 29.57 | 0.283% / 0.40% | 55.40 / 38.52 MiB | — | — |
+| Milestone 9, with idle tray | 29.62 | 0.332% / 0.65% | 49.50 / 38.66 MiB | 0.000% / no counter exposed | 46.79 / 10.44 MiB |
+| Milestone 9, with idle WPF | 29.59 | 0.273% / 0.30% | 46.82 / 34.63 MiB | 0.000% / 0.00% | 110.07 / 55.27 MiB |
+
+The renderer-only sample had a 48-byte render-thread allocation delta. The later
+tray and WPF samples and all nine warmed scene/mode checks each recorded zero
+render-thread allocated bytes. The short GPU readings varied between runs.
+
+Verified on Windows 11 25H2: startup registration and removal, direct `--startup`
+launch with saved preferences, a diagnostic and clean exit on a missing asset,
+real lock/unlock, and fullscreen pause/resume. Actual Windows sign-in startup
+still needs an end-to-end test.
 
 Milestone 8: Giant Maple Tree, Balanced mode, started by WPF and measured after
 the controller process had exited completely. No extra resident service/helper:
@@ -355,8 +402,9 @@ scene focused on localized motion, without another texture or draw layer.
 | Path | Purpose |
 | --- | --- |
 | `src/PixelWallpaper.Renderer/` | Separate Direct3D renderer executable. |
-| `src/PixelWallpaper.App/` | WPF controller, settings storage and process/control client. |
-| `src/Shared/` | Small options/protocol types linked into both executables. |
+| `src/PixelWallpaper.App/` | WPF settings window and per-user startup registration. |
+| `src/PixelWallpaper.Tray/` | Optional notification area icon and menu. |
+| `src/Shared/` | Shared renderer client, settings store, command gate, and protocol. |
 | `Rendering/` within the project | Direct3D device, textures, shaders, and drawing. |
 | `Scenes/` within the project | `SceneFactory`, three scenes, and reusable background/animation/sway/particle layers. |
 | `Windows/` within the project | Win32 window, desktop host, fullscreen checks, and interop. |
@@ -371,6 +419,10 @@ See [architecture notes](docs/ARCHITECTURE.md) for implementation details and
 ## Verification helper
 
 Stop the controller, wallpaper and other verification helpers before running.
+Use `--startup-check "$renderer"` with the executable path below to check the
+startup registration logic in an isolated test key, bounded Explorer retries,
+and stale settings protection between two disconnected clients.
+
 For Milestone 8 lifecycle checks (no visible fullscreen fixture):
 
 ```powershell
@@ -452,5 +504,5 @@ when explicitly invoked, so avoid running it over replacement artwork.
   power button may not generate an event. Actual sleep/hibernate and all mixed-DPI
   or game configurations have not been verified. Device loss stops the app; there
   is no automatic device recovery.
-- No tray icon, startup integration, moving clouds, wallpaper
+- No moving clouds, wallpaper
   editor, online features, browser rendering, or video playback.

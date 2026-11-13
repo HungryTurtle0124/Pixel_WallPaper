@@ -4,7 +4,7 @@
 
 This document preserves the original design goals and future roadmap. It is not
 a request to restart implementation or build all planned features. **Milestones
-1–8 are complete; later improvements have not started.** See [README.md](README.md) for the
+1–9 are implemented.** See [README.md](README.md) for the
 current build/run instructions, measured results, and limitations, and
 [architecture notes](docs/ARCHITECTURE.md) for implementation details.
 
@@ -637,6 +637,14 @@ scene/performance/fullscreen preferences and saves them to the existing JSON fil
 Named mutexes enforce single instances and serialize explicit commands. Atomic
 status/revision checks reject stale mutations; Stop/hotkey/--stop retain clean
 shutdown. No extra service, always-running WPF process, or automatic restart.
+
+## Milestone 9 — System Tray and Windows Startup
+
+An optional notification area application shares the WPF controller's renderer
+connection and serialized settings writes. Exiting either control leaves the
+renderer running. The WPF startup checkbox registers a per-user direct renderer
+launch. Sign-in startup restores the saved preferences, waits for Explorer with a
+deadline, and uses the same single-instance and diagnostic paths.
 
 ---
 

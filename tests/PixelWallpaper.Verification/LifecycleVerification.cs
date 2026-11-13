@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using PixelWallpaper.App;
 using PixelWallpaper.Shared;
 
 internal static class LifecycleVerification

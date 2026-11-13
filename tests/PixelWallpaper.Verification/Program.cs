@@ -21,6 +21,11 @@ internal static class Verification
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--startup-check")
+        {
+            try { StartupVerification.RunAsync(args[1]).GetAwaiter().GetResult(); return 0; }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
         if (args.Length == 2 && args[0] is "--lifecycle" or "--lifecycle-start" or "--lifecycle-hold")
         {
             try

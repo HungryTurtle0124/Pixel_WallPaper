@@ -1,6 +1,35 @@
 # Architecture notes
 
-Implementation details through Milestone 8. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+Implementation details through Milestone 9. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+
+## Optional tray and sign-in startup
+
+`PixelWallpaper.Tray` is a separate Windows Forms `NotifyIcon` application with
+one message loop, a context menu, and a hidden window for registered broadcasts.
+It starts explicitly from WPF, and has its own session-local instance mutex.
+The menu refreshes on open, renderer exit/ready, and preference-change messages.
+There are no periodic checks. Exit Tray removes the icon, lets any current command
+finish, and disposes the connection. The renderer and its GPU resources stay live.
+Open Settings starts the normal WPF application; an existing instance receives
+the open-settings broadcast and restores its window.
+
+Both controls use `src/Shared/RendererClient.cs` and `SettingsStore.cs`. Settings
+persist within the same command gate as live mutations or scene replacement. When
+the renderer is stopped, the client compares its last observed preferences with
+disk before writing. A real save posts a preferences-changed message, so the
+other control can refresh; a read of unchanged preferences sends no message.
+
+`StartupRegistration` in the WPF project owns the current user's `PixelWallpaper`
+value in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. The value contains
+the quoted renderer executable path and `--startup`. The checkbox reads the
+registration. Windows controls launch timing and can disable it through Startup
+Apps. Startup uses the same renderer instance mutex as manual and preview mode. It retries
+Explorer discovery every 500 ms for about 15 seconds (plus any final discovery
+call), before any GPU setup. The render window marks initialization for clients
+while startup reads saved preferences under the existing command gate. Exhausted
+retries or fatal initialization errors write the bounded renderer diagnostic and
+exit. Startup launches neither WPF nor the tray, and retains the existing behavior
+on Explorer loss. [Windows Run key documentation](https://learn.microsoft.com/en-us/windows/win32/setupapi/run-and-runonce-registry-keys)
 
 ## Independent lifecycle and live-state authority
 
@@ -16,10 +45,10 @@ and Explorer-host loss paths remain unchanged.
 process handle, checks its image/session, window PID and protocol signature, then
 reads one atomic packed status message. This carries scene, performance mode,
 fullscreen preference, stopping flag and revision. The live renderer is authoritative:
-WPF updates controls under its initialization guard and saves those values to JSON.
+The clients update controls and save those values to JSON.
 Stopped-state preferences still come from JSON. Start finding an existing renderer
 adopts it without applying stale launch defaults. Reconnection occurs at opening,
-focus activation and the existing Ready broadcast, not on an idle timer.
+focus activation or menu opening, and the renderer Ready broadcast.
 
 The renderer-instance mutex still prevents duplicate renderers, including raw
 simultaneous executable launches. A separate `Local\PixelWallpaper.Commands.v1`
@@ -27,7 +56,8 @@ mutex serializes controller transactions across processes. `RendererCommandGate`
 waits at most fifteen seconds and releases in finally; abandoned ownership after
 a crashed controller is accepted. A command runs synchronously on one Task worker
 so OS mutex ownership never crosses an await. There is no resident gate thread or
-service. A scene switch retains the gate until old exit and replacement startup.
+service. A scene switch retains the gate through old exit, replacement startup,
+and persistence.
 
 Before mutation, the client compares the observed process creation time/revision
 with fresh live status. The renderer also atomically checks the expected revision
@@ -38,8 +68,9 @@ decoding allocate only during explicit controller work; the warmed renderer loop
 has no new allocation or resource recreation path. Stop ignores preference-only
 revision changes but rejects a replacement process unseen by that client.
 
-Each IPC send is bounded to one second, startup discovery to seven seconds and
-process-exit waiting to five seconds. Only startup retries discovery every 100 ms.
+Each IPC send is bounded to one second and process-exit waiting to five seconds.
+After manual Start, the control surface checks for the endpoint every 100 ms for
+up to seven seconds.
 An initializing or stopping renderer produces a bounded wait/actionable error;
 it is never force-killed or automatically restarted. A controller crash between
 the Stop and Start of a scene change can leave the wallpaper stopped. Reopen and
@@ -152,7 +183,7 @@ and uses process-exit events for status updates. There is no recurring UI timer.
 Startup endpoint discovery is bounded to seven seconds with 100 ms waits on a
 command worker; those checks stop after connection.
 
-`src/Shared` contains small source files linked into both executables:
+`src/Shared` contains small source files linked into the executables:
 settings, protocol, command gate and error diagnostics. A hidden
 `RendererControlWindow` receives scalar Win32 messages. The payload contains a
 validated FPS value (15, 30, or 60) and one fullscreen-pause bit. `SendMessageTimeout`
@@ -176,8 +207,9 @@ A separate controller mutex prevents duplicate settings windows.
 Balanced/30 FPS, and fullscreen pause enabled. Validation rejects unknown scene
 IDs/modes; missing or invalid data uses defaults with an error message for invalid
 files. Saves flush a temporary file and replace the destination on the same
-volume. Settings are loaded at startup, not watched/polled. Running state is not
-persisted, and the app does not automatically start a stopped wallpaper.
+volume. Clients read settings on demand and sign-in startup reads them once.
+Running state is not persisted. The opt-in Windows registration controls sign-in
+launch independently of the three JSON preferences.
 
 Closing the settings window waits for any in-flight control action and disconnects
 without Stop. WPF's final Close is dispatched after its original Closing callback

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using PixelWallpaper.App;
 using PixelWallpaper.Renderer.Runtime;
 using PixelWallpaper.Renderer.Windows;
 using PixelWallpaper.Shared;

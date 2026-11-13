@@ -12,23 +12,31 @@
   <ItemGroup>
     <Compile Include="../Shared/*.cs" Link="Shared/%(Filename)%(Extension)" />
     <ProjectReference Include="../PixelWallpaper.Renderer/PixelWallpaper.Renderer.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="../PixelWallpaper.Tray/PixelWallpaper.Tray.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
   <!-- Keep the scene renderer's dependencies separate from the WPF controller. -->
   <Target Name="CollectRendererFiles">
     <MSBuild Projects="../PixelWallpaper.Renderer/PixelWallpaper.Renderer.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
       <Output TaskParameter="TargetOutputs" ItemName="RendererTarget" />
     </MSBuild>
+    <MSBuild Projects="../PixelWallpaper.Tray/PixelWallpaper.Tray.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="TrayTarget" />
+    </MSBuild>
     <PropertyGroup>
       <RendererDirectory>@(RendererTarget->'%(RootDir)%(Directory)')</RendererDirectory>
+      <TrayDirectory>@(TrayTarget->'%(RootDir)%(Directory)')</TrayDirectory>
     </PropertyGroup>
     <ItemGroup>
       <RendererFiles Include="$(RendererDirectory)**/*" Exclude="$(RendererDirectory)publish/**/*" />
+      <TrayFiles Include="$(TrayDirectory)**/*" Exclude="$(TrayDirectory)publish/**/*" />
     </ItemGroup>
   </Target>
   <Target Name="CopyRendererForBuild" AfterTargets="Build" DependsOnTargets="CollectRendererFiles">
     <Copy SourceFiles="@(RendererFiles)" DestinationFiles="@(RendererFiles->'$(OutDir)Renderer/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(TrayFiles)" DestinationFiles="@(TrayFiles->'$(OutDir)Tray/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyRendererForPublish" AfterTargets="Publish" DependsOnTargets="CollectRendererFiles">
     <Copy SourceFiles="@(RendererFiles)" DestinationFiles="@(RendererFiles->'$(PublishDir)Renderer/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(TrayFiles)" DestinationFiles="@(TrayFiles->'$(PublishDir)Tray/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

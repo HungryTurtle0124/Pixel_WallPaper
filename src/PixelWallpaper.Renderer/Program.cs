@@ -13,25 +13,30 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        bool startup = args is ["--startup"];
         try
         {
             if (args.Length == 1 && args[0] == "--stop")
                 return DesktopHost.RequestStop() ? 0 : 1;
-            var options = RendererArguments.Parse(args);
             using var instance = new Mutex(true, RendererProtocol.RendererMutex, out bool firstInstance);
             if (!firstInstance) { Console.Error.WriteLine("Pixel Wallpaper is already running."); return 2; }
 
-            DesktopHostInfo? hostInfo = options.Windowed ? null : DesktopHostInfo.Discover();
+            var options = startup ? null : RendererArguments.Parse(args);
+            DesktopHostInfo? hostInfo = options?.Windowed == true ? null : startup
+                ? StartupDesktop.WaitForHost(DesktopHostInfo.Discover, TimeSpan.FromSeconds(15), TimeSpan.FromMilliseconds(500))
+                : DesktopHostInfo.Discover();
             // Reverse disposal: control -> pacer -> scene -> D3D -> runtime -> host -> HWND.
             using var window = new RenderWindow(hostInfo?.DpiContext ?? 0);
+            // Finish any stopped-state preference write already in progress before loading.
+            var settings = options?.Settings ?? RendererCommandGate.Run(() => new SettingsStore().Load(out _));
             using var desktop = hostInfo is null ? null : new DesktopHost(window, hostInfo);
             using var runtime = new RuntimeStateManager(window);
-            runtime.SetPauseWhileFullscreen(options.Settings.PauseWhileFullscreen);
+            runtime.SetPauseWhileFullscreen(settings.PauseWhileFullscreen);
             using var renderer = new D3D11Renderer(window.Handle, window.Width, window.Height);
-            using IScene scene = SceneFactory.Create(renderer, options.Settings.Wallpaper);
+            using IScene scene = SceneFactory.Create(renderer, settings.Wallpaper);
             using var pacer = new FramePacer();
-            pacer.SetFrameRate((int)options.Settings.PerformanceMode);
-            using var control = new RendererControlWindow(window, pacer, runtime, options.Settings.Wallpaper);
+            pacer.SetFrameRate((int)settings.PerformanceMode);
+            using var control = new RendererControlWindow(window, pacer, runtime, settings.Wallpaper);
             window.Show();
 
             while (pacer.WaitForFrame(window, renderer.FrameLatencyHandle, runtime))
@@ -44,7 +49,7 @@ internal static class Program
         }
         catch (Exception error)
         {
-            if (args.Contains("--background")) RendererDiagnostics.Write(error);
+            if (startup || args.Contains("--background")) RendererDiagnostics.Write(error);
             else NativeMethods.MessageBoxW(0,
                 "The renderer stopped and released its resources.\n\n" + error,
                 "Pixel Wallpaper - rendering error", 0x10);

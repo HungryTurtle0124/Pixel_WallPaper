@@ -2,9 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using PixelWallpaper.Shared;
 
-namespace PixelWallpaper.App;
+namespace PixelWallpaper.Shared;
 
 // Explicit commands use a bounded, cross-process gate. Idle status uses Process.Exited,
 // controller activation and the startup broadcast; there is no recurring scan.
@@ -13,22 +12,29 @@ internal sealed class RendererClient : IDisposable
     private sealed record Snapshot(int ProcessId, long Started, uint Revision, bool Stopping, WallpaperSettings Settings);
     private readonly object _stateLock = new();
     private readonly string _executable;
+    private readonly SettingsStore? _store;
+    private WallpaperSettings? _preferences;
     private Process? _process;
     private Snapshot? _snapshot;
     private nint _endpoint;
     private bool _disposed;
 
-    public RendererClient(string? executable = null) => _executable = executable ??
-        Path.Combine(AppContext.BaseDirectory, "Renderer", "PixelWallpaper.Renderer.exe");
+    public RendererClient(string? executable = null, SettingsStore? store = null)
+    {
+        _executable = executable ?? Path.Combine(AppContext.BaseDirectory, "Renderer", "PixelWallpaper.Renderer.exe");
+        _store = store;
+    }
     public event Action? StateChanged;
     public bool IsRunning { get { lock (_stateLock) return _process is not null && !_process.HasExited; } }
     public bool IsStopping { get { lock (_stateLock) return _process is not null && !_process.HasExited && _snapshot?.Stopping == true; } }
-    public WallpaperSettings? CurrentSettings { get { lock (_stateLock) return _snapshot?.Settings; } }
+    public WallpaperSettings? CurrentSettings { get { lock (_stateLock) return _snapshot?.Settings ?? _preferences; } }
 
     public Task<WallpaperSettings?> ConnectAsync() => CommandAsync(() =>
     {
         Snapshot? current = Discover();
         if (current is null) Forget();
+        if (current is not null) Remember(current.Settings);
+        else if (_store is not null) LoadPreferences();
         return current?.Settings;
     });
 
@@ -37,9 +43,9 @@ internal sealed class RendererClient : IDisposable
         settings.Validate();
         Snapshot? current = Discover();
         // Another Start wins by existence. Never overwrite its live settings with our defaults.
-        if (current is not null && !current.Stopping) return current.Settings;
+        if (current is not null && !current.Stopping) return Remember(current.Settings);
         if (current is not null) WaitForExit();
-        return Launch(settings);
+        return Remember(Launch(_store is null ? settings : LoadPreferences()));
     });
 
     public Task<WallpaperSettings> ApplyAsync(WallpaperSettings settings) => CommandAsync(() =>
@@ -52,7 +58,14 @@ internal sealed class RendererClient : IDisposable
         {
             Forget();
             if (expected is not null) throw new IOException("The renderer exited. Start Wallpaper to run it again.");
-            return settings; // Stopped: save preferences without launching anything.
+            if (_store is not null)
+            {
+                WallpaperSettings? observed;
+                lock (_stateLock) observed = _preferences;
+                if (observed != LoadPreferences())
+                    throw new IOException("Saved preferences changed elsewhere. Current settings have been refreshed; please retry your change.");
+            }
+            return Remember(settings); // Stopped: save preferences without launching anything.
         }
         if (expected != current)
             throw new IOException("The wallpaper state changed elsewhere. Current settings have been refreshed; please retry your change.");
@@ -60,7 +73,7 @@ internal sealed class RendererClient : IDisposable
         if (current.Settings.Wallpaper != settings.Wallpaper)
         {
             StopCurrent();
-            return Launch(settings); // One gate covers the full clean stop/start transaction.
+            return Remember(Launch(settings)); // One gate covers stop/start and persistence.
         }
         ValidateEndpoint();
         nuint result = RendererProtocol.Send(_endpoint, RendererProtocol.ApplyChecked,
@@ -68,7 +81,7 @@ internal sealed class RendererClient : IDisposable
         Snapshot? applied = Discover();
         if (result != 1 || applied is null || applied.Settings != settings)
             throw new IOException("The renderer state changed or the command was not accepted. Refresh and retry.");
-        return applied.Settings;
+        return Remember(applied.Settings);
     });
 
     public Task<WallpaperSettings?> StopAsync() => CommandAsync<WallpaperSettings?>(() =>
@@ -80,7 +93,7 @@ internal sealed class RendererClient : IDisposable
         if (expected is not null && (expected.ProcessId != current.ProcessId || expected.Started != current.Started))
             throw new IOException("A replacement renderer is running. Its state has been refreshed; retry Stop Wallpaper.");
         StopCurrent();
-        return current.Settings;
+        return Remember(current.Settings);
     });
 
     private Task<T> CommandAsync<T>(Func<T> command) => Task.Run(() => RendererCommandGate.Run(() =>
@@ -88,6 +101,25 @@ internal sealed class RendererClient : IDisposable
         lock (_stateLock) ObjectDisposedException.ThrowIf(_disposed, this);
         return command();
     }));
+
+    private WallpaperSettings LoadPreferences()
+    {
+        var settings = _store!.Load(out _);
+        lock (_stateLock) _preferences = settings;
+        return settings;
+    }
+
+    // Call only under the command gate, so a later command cannot save before this one.
+    private WallpaperSettings Remember(WallpaperSettings settings)
+    {
+        lock (_stateLock) _preferences = settings;
+        if (_store is not null && (_store.Load(out var warning) != settings || warning is not null))
+        {
+            _store.Save(settings);
+            RendererProtocol.Broadcast(RendererProtocol.PreferencesChangedMessage);
+        }
+        return settings;
+    }
 
     private Snapshot? Discover()
     {
@@ -160,9 +192,19 @@ internal sealed class RendererClient : IDisposable
                 Snapshot? current = Discover();
                 if (current is not null && !current.Stopping) return current.Settings;
             }
-            if (launched.HasExited && launched.ExitCode != 2)
+            if (launched.HasExited)
+            {
+                if (launched.ExitCode == 2)
+                {
+                    // A sign-in launch can need this gate to finish initializing.
+                    // Release it promptly when that launch owns the instance mutex.
+                    Snapshot? current = Discover();
+                    if (current is not null && !current.Stopping) return current.Settings;
+                    throw new IOException("Another wallpaper renderer started first. Wait briefly, then try again.");
+                }
                 throw new IOException("The renderer exited during startup. " +
                     (RendererDiagnostics.Read(launched.Id, started) ?? $"Exit code {launched.ExitCode}; check desktop host, GPU, and assets."));
+            }
             Thread.Sleep(100);
         } while (Environment.TickCount64 < deadline);
         // Leave a slow-starting renderer independent and discoverable. Never force-kill it.

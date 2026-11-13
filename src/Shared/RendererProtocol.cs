@@ -21,6 +21,13 @@ internal static class RendererProtocol
     public const uint Signature = 0x50575008; // Pixel Wallpaper, lifecycle protocol 8.
     public const uint Close = 0x0010;
     public static readonly uint ReadyMessage = RegisterWindowMessageW("PixelWallpaper.Renderer.Ready.v1");
+    public static readonly uint PreferencesChangedMessage = RegisterWindowMessageW("PixelWallpaper.Preferences.Changed.v1");
+    public static readonly uint OpenSettingsMessage = RegisterWindowMessageW("PixelWallpaper.Settings.Open.v1");
+
+    public static void Broadcast(uint message)
+    {
+        if (message != 0) PostMessageW(0xFFFF, message, 0, 0);
+    }
 
     // Zero is the unsupported message response from a Milestone 5 renderer (Rainy Forest).
     public static string SceneFromCode(nuint code) => code switch

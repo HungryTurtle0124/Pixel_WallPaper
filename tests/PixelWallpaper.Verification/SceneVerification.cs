@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json;
-using PixelWallpaper.App;
 using PixelWallpaper.Renderer.Scenes.Layers;
 using PixelWallpaper.Shared;
 

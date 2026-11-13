@@ -1,9 +1,8 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using PixelWallpaper.Shared;
 
-namespace PixelWallpaper.App;
+namespace PixelWallpaper.Shared;
 
 internal sealed class SettingsStore
 {
@@ -19,7 +18,7 @@ internal sealed class SettingsStore
         try
         {
             if (!File.Exists(_path)) return new();
-            using var input = File.OpenRead(_path);
+            using var input = File.Open(_path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             if (input.Length > 16 * 1024) throw new InvalidDataException("The settings file is too large.");
             var settings = JsonSerializer.Deserialize<WallpaperSettings>(input, JsonOptions)
                 ?? throw new InvalidDataException("The settings file is empty.");
