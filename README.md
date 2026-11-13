@@ -4,7 +4,7 @@ A lightweight Windows wallpaper engine for procedural pixel-art scenes. It uses
 C#, .NET 8, Direct3D 11 through Vortice, and Win32 desktop integration to render
 behind the desktop icons without a browser engine or video playback.
 
-**Status: Milestones 1–9 implemented.** A small WPF controller and optional tray
+**Status: Milestones 1–10 implemented.** A small WPF controller and optional tray
 control an independent renderer. Rainy Forest, Campfire, and Giant Maple Tree
 are available. Windows sign-in startup is optional and defaults to off.
 
@@ -35,9 +35,9 @@ drawing, and presentation stop; GPU resources remain resident for quick resume.
 - Windows x64 and a Direct3D 11 GPU supporting feature level 11.0.
 - **Windows 11 25H2 was tested. The Windows 10 desktop-host branch is not yet verified.**
   The Win32 APIs used require Windows 10 version 1703 or later.
-- The **.NET 8 Windows Desktop Runtime** for WPF and the optional Windows Forms
-  tray. The standalone renderer needs the .NET 8 runtime. All three executables
-  are framework-dependent.
+- The portable ZIP includes the .NET 8 runtime. For a development build, install
+  the **.NET 8 Windows Desktop Runtime** for WPF and the optional Windows Forms
+  tray. The development renderer needs the .NET 8 runtime.
 - To build, the **.NET SDK selected by `global.json`**: currently 10.0.402, with
   roll-forward within newer .NET 10 feature bands. This SDK builds the
   `net8.0-windows` target; the SDK version and runtime target are separate choices.
@@ -59,6 +59,40 @@ dotnet build .\PixelWallpaper.sln -c Release --no-restore
 
 The background PNG and compiled shader bytecode are included in the repository.
 No shader regeneration or extra asset download is required for a normal build.
+
+## Portable ZIP
+
+Extract the whole `PixelWallpaper-v0.10.0-win-x64.zip` to a folder you can keep.
+Double-click `PixelWallpaper.App.exe` in the extracted folder. The package
+includes .NET 8 and needs no installer or Visual Studio. Keep `Renderer/` and
+`Tray/` beside the controller. Closing Settings leaves the wallpaper running.
+
+To create the ZIP from source with the SDK selected by `global.json`, run:
+
+```powershell
+.\scripts\publish-portable.ps1
+```
+
+The script writes a complete folder and ZIP under `artifacts/portable/`. It
+uses a clean staging folder and locked NuGet restore. To keep a previous
+package, use `-OutputDirectory` to build into a different folder. Use `-Version`
+to set the version in the folder and ZIP names. The first publish may download
+the x64 runtime packs from NuGet.
+
+For removal or relocation, turn off **Start Wallpaper with Windows** first,
+then stop the wallpaper, exit the tray, and close Settings. You can now move or
+delete the extracted folder. Preferences stay in `%LOCALAPPDATA%\PixelWallpaper`.
+If the folder already moved, open Settings from the new location and toggle
+startup off and back on to update the registered path.
+
+The portable executables are unsigned. Windows may show a SmartScreen reputation
+warning or block the app under your device policy. Verify the download source.
+See the ZIP's `README.txt` for troubleshooting. [Microsoft SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
+
+Portable verification used an extracted copy on Windows 11 25H2, with a separate
+working directory. Each process loaded its bundled runtime. The Windows startup
+check exercised the direct renderer command and an isolated registry test key.
+A clean Windows machine and actual sign-in remain untested.
 
 ## Run the settings application
 
@@ -160,14 +194,6 @@ stdio pipes. Background-mode fatal errors are kept in one bounded local file,
 Startup error readback checks PID and process creation time to avoid showing an
 old failure. Standalone launches keep their error dialog.
 
-To create a framework-dependent folder for distribution:
-
-```powershell
-dotnet publish .\src\PixelWallpaper.App -c Release --self-contained false -o .\publish
-```
-
-Keep the whole published folder, including `Renderer/` and `Tray/`.
-
 ## Standalone renderer and preview
 
 The renderer can still run without WPF:
@@ -213,6 +239,20 @@ Use `--stop` if another application owns that shortcut. Shutdown releases owned
 Direct3D and Win32 resources and reveals the saved Windows wallpaper.
 
 ## Measured performance
+
+Milestone 10 portable release, Giant Maple Tree in Balanced mode on Windows 11
+25H2. These are 20-second samples. CPU is normalized to the whole machine. GPU
+figures are process 3D-engine averages and exclude DWM.
+
+| Packaged configuration | Renderer FPS | Renderer CPU / GPU | Renderer working set / private | Control CPU / GPU | Control working set / private |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Renderer alone | 29.53 | 0.263% / 0.60% | 59.16 / 38.88 MiB | — | — |
+| With tray | 29.49 | 0.185% / 0.25% | 52.74 / 35.25 MiB | 0.000% / no counter exposed | 47.30 / 10.62 MiB |
+| With WPF | 28.53 | 0.371% / 0.45% | 52.75 / 35.35 MiB | 0.107% / 0.00% | 123.59 / 48.97 MiB |
+
+All three portable samples recorded zero render-thread allocations. The bundled
+.NET 8.0.32 package measured 170.79 MiB as a ZIP and 391.98 MiB extracted. Each
+executable loaded CoreCLR from the extracted copy.
 
 Milestone 9 used the same Giant Maple Tree renderer at Balanced on Windows 11
 25H2 and a GTX 1650. Each Milestone 9 row uses a 20-second sample. CPU is
@@ -412,6 +452,7 @@ scene focused on localized motion, without another texture or draw layer.
 | `Control/` within the renderer | Lightweight message endpoint and command-line options; no parent lifetime watcher. |
 | `tests/PixelWallpaper.Verification/` | Separate, non-shipping regression helper. |
 | `tools/` | Development-only profiling, shader compilation, and placeholder generation. |
+| `scripts/publish-portable.ps1` | Self-contained Windows x64 publish, package validation, and ZIP creation. |
 
 See [architecture notes](docs/ARCHITECTURE.md) for implementation details and
 [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md) for the original design intent and roadmap.

@@ -1,6 +1,32 @@
 # Architecture notes
 
-Implementation details through Milestone 9. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+Implementation details through Milestone 10. Paths below are relative to the repository root. See [README](../README.md) for build/run instructions and current status.
+
+## Portable deployment
+
+`scripts/publish-portable.ps1` publishes the WPF controller, renderer, and tray as
+separate self-contained `win-x64` .NET 8 applications. It places the controller
+at the root and the companion publishes in `Renderer/` and `Tray/`. The
+controller's regular copy targets are skipped in this mode so each companion
+comes from `dotnet publish`. The script keeps build intermediates in its staging
+directory, checks required app hosts, runtime components, renderer dependencies
+and PNGs, includes dependency notices, then creates the ZIP. Embedded shader
+bytecode ships in the renderer DLL.
+
+Each process loads its local runtime. The renderer avoids the Windows Desktop
+runtime used by WPF and WinForms. This duplicates some files in the ZIP and lets
+each executable start independently. Trimming is disabled for WPF and WinForms
+compatibility. Folder publishing preserves executable-relative lookup, and
+ReadyToRun is disabled pending a measured startup benefit.
+[.NET publishing options](https://learn.microsoft.com/en-us/dotnet/core/deploying/)
+[Windows trimming compatibility](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/incompatibilities)
+
+Lookup is based on `AppContext.BaseDirectory`. The controller finds both companion
+executables under its own directory, the tray looks one level up for the controller
+and renderer, and the renderer loads PNGs under its own `Assets/`. Preferences
+and diagnostics continue to live in LocalAppData. An opt-in startup registration
+uses the extracted renderer's absolute path, so moving the folder requires
+registering the new path if startup is desired.
 
 ## Optional tray and sign-in startup
 
@@ -170,10 +196,9 @@ shutdown releases the scene before the renderer's shared sprite pipeline.
 
 `src/PixelWallpaper.App` is a small `net8.0-windows` WPF executable. The existing
 renderer remains a separate executable. WPF does not host the swap chain or load
-Vortice; its package graph has no third-party UI dependencies. The solution builds
-both projects and copies the complete renderer output into the controller's
-`Renderer/` subdirectory for build and publish. The project reference is a build
-dependency with assembly referencing/copy-local disabled.
+Vortice; its package graph has no third-party UI dependencies. Development builds
+copy the renderer and tray outputs into their companion subdirectories. The
+project references are build dependencies with assembly referencing disabled.
 
 `MainWindow` contains the two buttons, data-driven wallpaper/mode lists, fullscreen
 checkbox, and status/error text. There are three wallpaper IDs. No scene

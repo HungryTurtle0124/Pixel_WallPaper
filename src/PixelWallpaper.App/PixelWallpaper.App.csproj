@@ -4,6 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>../PixelWallpaper.Renderer/app.manifest</ApplicationManifest>
@@ -31,11 +32,13 @@
       <TrayFiles Include="$(TrayDirectory)**/*" Exclude="$(TrayDirectory)publish/**/*" />
     </ItemGroup>
   </Target>
-  <Target Name="CopyRendererForBuild" AfterTargets="Build" DependsOnTargets="CollectRendererFiles">
+  <Target Name="CopyRendererForBuild" AfterTargets="Build" DependsOnTargets="CollectRendererFiles"
+          Condition="'$(PortablePublish)' != 'true'">
     <Copy SourceFiles="@(RendererFiles)" DestinationFiles="@(RendererFiles->'$(OutDir)Renderer/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(TrayFiles)" DestinationFiles="@(TrayFiles->'$(OutDir)Tray/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="CopyRendererForPublish" AfterTargets="Publish" DependsOnTargets="CollectRendererFiles">
+  <Target Name="CopyRendererForPublish" AfterTargets="Publish" DependsOnTargets="CollectRendererFiles"
+          Condition="'$(PortablePublish)' != 'true'">
     <Copy SourceFiles="@(RendererFiles)" DestinationFiles="@(RendererFiles->'$(PublishDir)Renderer/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(TrayFiles)" DestinationFiles="@(TrayFiles->'$(PublishDir)Tray/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>

@@ -1,0 +1,45 @@
+Pixel Wallpaper Engine — Windows x64 portable release
+
+Extract the entire ZIP into a folder you can keep. Open the extracted folder
+and double-click PixelWallpaper.App.exe. Keep the Renderer and Tray folders
+beside it. The package includes .NET 8 and needs neither Visual Studio nor a
+separate .NET installation. It uses Windows Explorer and a Direct3D 11 GPU
+supporting feature level 11.0. Desktop mode was tested on Windows 11 25H2.
+The Windows 10 desktop-host path remains unverified.
+
+Choose Rainy Forest, Campfire, or Giant Maple Tree and click Start Wallpaper.
+The controller can close while the wallpaper continues. Open the controller
+again to reconnect. To stop, use Stop Wallpaper in Settings or in the tray.
+The emergency shortcut is Ctrl+Alt+Shift+Q if Windows could register it. You
+can also run Renderer\PixelWallpaper.Renderer.exe --stop from a terminal.
+
+Show Tray Icon adds optional controls to the notification area. Check the
+taskbar overflow arrow and right-click the icon. Exit Tray closes the icon
+and leaves the wallpaper running.
+
+Windows sign-in startup is off by default. If enabled in Settings, it starts
+the renderer directly from this folder with the saved preferences. Before
+moving or deleting the folder, uncheck Start Wallpaper with Windows. If the
+folder has already moved, launch Settings from the new folder, uncheck the
+option and recheck it if you want to register the new location. Windows
+Startup Apps can disable the entry separately. Actual Windows sign-in is
+untested; the direct startup command has been verified.
+
+Settings are saved in %LOCALAPPDATA%\PixelWallpaper\settings.json and are
+shared with development or earlier versions for the same Windows account.
+To uninstall, disable sign-in startup, stop the wallpaper, exit the tray,
+close Settings, then delete the extracted folder. Your preferences remain
+in LocalAppData for future use.
+
+If the renderer or tray is missing, extract the whole ZIP again. If desktop
+mode stops after Explorer restarts, start the wallpaper again once the desktop
+is ready. Renderer startup errors may be recorded in
+%LOCALAPPDATA%\PixelWallpaper\renderer-error.txt.
+
+See the Notices folder for bundled runtime and dependency license notices.
+
+The app executables are unsigned. A downloaded copy may trigger a Windows
+SmartScreen warning or be blocked by device policy. Verify where you obtained
+the archive before running it and follow your device's security policy.
+Microsoft guidance on SmartScreen reputation:
+https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation
